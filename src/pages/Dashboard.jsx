@@ -106,7 +106,7 @@ const Dashboard = () => {
                 <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full flex items-center justify-center shadow-inner">
                   <Package className="w-5 h-5 text-white" />
                 </div>
-                <h2 className="text-base sm:text-lg font-bold text-purple-800">Seller Store</h2>
+                <h2 className="text-base sm:text-lg font-bold text-purple-800">Lmart-SellerStore</h2>
               </div>
             )}
             <button

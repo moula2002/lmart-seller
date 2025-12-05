@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   FiPackage,
@@ -27,7 +26,7 @@ import {
   addDoc,
   getDocs,
   doc,
-  updateDoc,
+  getDoc,
 } from "firebase/firestore";
 import {
   ref,
@@ -106,9 +105,6 @@ const AddProduct = () => {
     category: '',
     subCategory: '',
     sellerId: '',
-    sellerID: '',
-    sellerid: '',
-    seller: '',
     productTag: '',
     variants: [],
   });
@@ -134,7 +130,6 @@ const AddProduct = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newlyAddedProductId, setNewlyAddedProductId] = useState('');
 
-  // --- GET CURRENT SELLER FROM AUTH ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -151,9 +146,6 @@ const AddProduct = () => {
             setProductData(prev => ({
               ...prev,
               sellerId: sellerData.sellerId || sellerData.id || user.uid,
-              sellerID: sellerData.sellerId || sellerData.id || user.uid,
-              sellerid: sellerData.sellerId || sellerData.id || user.uid,
-              seller: sellerData.sellerId || sellerData.id || user.uid,
             }));
           } else {
             // If seller doc doesn't exist, use auth UID
@@ -161,9 +153,6 @@ const AddProduct = () => {
             setProductData(prev => ({
               ...prev,
               sellerId: user.uid,
-              sellerID: user.uid,
-              sellerid: user.uid,
-              seller: user.uid,
             }));
           }
         } catch (error) {
@@ -173,19 +162,13 @@ const AddProduct = () => {
           setProductData(prev => ({
             ...prev,
             sellerId: user.uid,
-            sellerID: user.uid,
-            sellerid: user.uid,
-            seller: user.uid,
           }));
         }
       } else {
         setCurrentSeller(null);
         setProductData(prev => ({
           ...prev,
-          sellerId: '',
-          sellerID: '',
-          sellerid: '',
-          seller: '',
+          sellerId: ''
         }));
       }
     });
@@ -425,9 +408,6 @@ const AddProduct = () => {
       category: '',
       subCategory: '',
       sellerId: currentSeller?.sellerId || currentSeller?.id || '',
-      sellerID: currentSeller?.sellerId || currentSeller?.id || '',
-      sellerid: currentSeller?.sellerId || currentSeller?.id || '',
-      seller: currentSeller?.sellerId || currentSeller?.id || '',
       productTag: '',
       variants: [],
     });
@@ -540,10 +520,9 @@ const AddProduct = () => {
 
         // Save seller ID in multiple fields for compatibility
         sellerId: sellerId,
-        sellerID: sellerId,
         sellerid: sellerId,
-        seller: sellerId,
-
+        sellerID: sellerId,
+      
         productTag: productData.productTag || '',
         variants: productData.variants,
 
@@ -552,15 +531,30 @@ const AddProduct = () => {
         videoUrl: videoDownloadURL,
 
         searchKeywords: generateSearchKeywords(tempProductForKeywords),
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         status: 'Active',
       };
 
       // --- 5. SAVE TO FIRESTORE ---
       const docRef = await addDoc(collection(db, "products"), productToSave);
+      
+      // Create the complete product object with ID
+      const newProduct = {
+        id: docRef.id,
+        ...productToSave
+      };
 
-      // --- 6. CLEANUP AND SUCCESS ---
+      // --- 6. DISPATCH EVENT TO UPDATE SELLERPRODUCTS ---
+      const newProductEvent = new CustomEvent('newProductAdded', {
+        detail: {
+          type: 'NEW_PRODUCT_ADDED',
+          product: newProduct
+        }
+      });
+      window.dispatchEvent(newProductEvent);
+
+      // --- 7. CLEANUP AND SUCCESS ---
       setNewlyAddedProductId(docRef.id);
       setShowSuccessModal(true);
 
@@ -825,15 +819,13 @@ const AddProduct = () => {
                     />
                   </label>
                 </div>
-              ) : null}
-
-              {/* Image Previews with Dropdown Color Assignment */}
-              {galleryFiles.length > 0 && (
+              ) : (
                 <div className="mt-0 p-4 border border-gray-300 rounded-lg bg-white">
                   <p className="text-sm font-bold text-gray-700 mb-3 flex justify-between items-center">
                     <span>Gallery Image Previews ({galleryFiles.length}):</span>
                     <label htmlFor="galleryImages" className="cursor-pointer text-blue-600 hover:text-blue-800 text-sm font-semibold flex items-center space-x-1">
-                      <FiPlus className="w-4 h-4" /> <span>Add More</span>
+                      <FiPlus className="w-4 h-4" /> 
+                      <span>Add More</span>
                       <input
                         type="file"
                         id="galleryImages"
@@ -857,7 +849,7 @@ const AddProduct = () => {
                           className="w-full h-20 object-cover"
                         />
 
-                        <span className={`absolute top-0 left-0 text-white text-xs font-bold px-2 py-1 rounded-br-lg z-10 bg-pink-600`}>
+                        <span className="absolute top-0 left-0 text-white text-xs font-bold px-2 py-1 rounded-br-lg z-10 bg-pink-600">
                           GALLERY
                         </span>
 
@@ -1154,6 +1146,9 @@ const AddProduct = () => {
               </p>
               <p className="mt-2 text-sm text-blue-600">
                 Seller ID: <span className="font-mono bg-blue-100 p-1 rounded">{productData.sellerId}</span>
+              </p>
+              <p className="mt-3 text-sm text-green-600 font-medium">
+                The product will now appear in your inventory list.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">

@@ -34,7 +34,8 @@ import {
   Hash,
   Calendar,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Palette
 } from 'lucide-react';
 
 const SellerProducts = React.memo(() => {
@@ -55,6 +56,7 @@ const SellerProducts = React.memo(() => {
     averagePrice: 0
   });
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [message, setMessage] = useState('');
 
   const navigate = useNavigate();
 
@@ -187,8 +189,8 @@ const SellerProducts = React.memo(() => {
           if (ownerMatches || ownerIdSet.size === 0) {
             setProducts([p]);
             calculateSellerStats([p]);
-             // Clear error if a product is successfully fetched
-            setError(null); 
+            // Clear error if a product is successfully fetched
+            setError(null);
           } else {
             setProducts([]);
             setError('You are not authorized to view this product.');
@@ -209,13 +211,10 @@ const SellerProducts = React.memo(() => {
 
     try {
       if (!sellerUid && ownerIdSet.size === 0) {
-        // Only set error if no products were found previously and still no seller is signed in.
-        // If we previously had products, we allow re-render without this error,
-        // which helps if user sign-in state is lagging.
         if (products.length === 0 && !isInitialLoad && !isRefresh) {
           setError('No seller signed in.');
         } else if (isInitialLoad || isRefresh) {
-           setError(null); // Explicitly don't show the error on initial load or refresh if product list might be empty but is still loading
+          setError(null); // Explicitly don't show the error on initial load or refresh if product list might be empty but is still loading
         }
         setLoading(false);
         setIsInitialLoad(false);
@@ -280,8 +279,6 @@ const SellerProducts = React.memo(() => {
           const B = (b.brand || '').toString().toLowerCase();
           return A < B ? -1 : A > B ? 1 : 0;
         });
-        
-        // Merge with existing products to keep both old and new
         if (!isInitialLoad && !isRefresh && products.length > 0) {
           const mergedProducts = mergeUniqueById(products, filtered);
           setProducts(mergedProducts);
@@ -290,7 +287,7 @@ const SellerProducts = React.memo(() => {
           setProducts(filtered);
           calculateSellerStats(filtered);
         }
-        
+
         setLoading(false);
         setIsInitialLoad(false);
         setError(null); // Clear error if products are successfully fetched
@@ -309,7 +306,7 @@ const SellerProducts = React.memo(() => {
           const B = (b.brand || '').toString().toLowerCase();
           return A < B ? -1 : A > B ? 1 : 0;
         });
-        
+
         // Merge with existing products to keep both old and new
         if (!isInitialLoad && !isRefresh && products.length > 0) {
           const mergedProducts = mergeUniqueById(products, data);
@@ -319,7 +316,7 @@ const SellerProducts = React.memo(() => {
           setProducts(data);
           calculateSellerStats(data);
         }
-        
+
         setLoading(false);
         setIsInitialLoad(false);
         setError(null); // Clear error if products are successfully fetched
@@ -351,6 +348,11 @@ const SellerProducts = React.memo(() => {
             if (!productExists) {
               const updatedProducts = [newProduct, ...prevProducts];
               calculateSellerStats(updatedProducts);
+
+              // Show success message
+              setMessage('✅ New product added successfully!');
+              setTimeout(() => setMessage(''), 3000);
+
               return updatedProducts;
             }
             return prevProducts;
@@ -360,7 +362,7 @@ const SellerProducts = React.memo(() => {
     };
 
     window.addEventListener('newProductAdded', handleNewProductAdded);
-    
+
     return () => {
       window.removeEventListener('newProductAdded', handleNewProductAdded);
     };
@@ -551,7 +553,6 @@ const SellerProducts = React.memo(() => {
               </div>
               <div>
                 <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900">Product Inventory</h1>
-                <p className="text-xs md:text-sm text-gray-600 mt-0.5">Manage your product catalog efficiently</p>
                 {sellerDoc && (
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <User className="w-3 h-3 md:w-4 md:h-4 text-blue-600" />
@@ -672,9 +673,22 @@ const SellerProducts = React.memo(() => {
           </div>
         </div>
 
-        {/* --- MODIFICATION START: Conditional Error Rendering --- */}
-        {/* Only show error if products are empty OR the error is NOT 'No seller signed in.' AND we are not on initial load/refresh attempting to load. */}
-        {/* The 'No seller signed in.' error is now suppressed if products exist or if we are still loading. */}
+        {/* Success Message */}
+        {message && message.startsWith('✅') && (
+          <div className="mb-6 bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 p-4 rounded-r-xl animate-slide-down">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+              <span className="text-green-700 font-medium">{message}</span>
+              <button
+                onClick={() => setMessage('')}
+                className="ml-auto text-green-600 hover:text-green-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {error && (products.length === 0 || error !== 'No seller signed in.') && (
           <div className="mb-6 bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 p-4 rounded-r-xl animate-slide-down">
             <div className="flex items-center gap-3">
@@ -689,7 +703,6 @@ const SellerProducts = React.memo(() => {
             </div>
           </div>
         )}
-        {/* --- MODIFICATION END --- */}
 
         {updateError && (
           <div className="mb-6 bg-gradient-to-r from-orange-50 to-orange-100 border-l-4 border-orange-500 p-4 rounded-r-xl animate-slide-down">
@@ -775,8 +788,21 @@ const SellerProducts = React.memo(() => {
 const ProductCard = React.memo(({ product, index, onViewDetails }) => {
   const productName = product.name || product.brand || 'Generic Product';
   const displaySku = product.basesku || product.sku || 'N/A';
-  const stock = product.stockQuantity || product.stock || 0;
-  const stockClass = stock > 10 ? 'bg-green-100 text-green-800' : stock > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+
+  // Calculate total stock from variants if available, otherwise use main stock
+  const calculateTotalStock = () => {
+    if (product.variants && product.variants.length > 0) {
+      return product.variants.reduce((total, variant) => {
+        return total + (Number(variant.stock) || 0);
+      }, 0);
+    }
+    return product.stockQuantity || product.stock || 0;
+  };
+
+  const stock = calculateTotalStock();
+  const stockClass = stock > 10 ? 'bg-green-100 text-green-800 border border-green-200' :
+    stock > 0 ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+      'bg-red-100 text-red-800 border border-red-200';
 
   const category = product.category ?
     (typeof product.category === 'object' ? product.category.name : product.category) :
@@ -789,6 +815,19 @@ const ProductCard = React.memo(({ product, index, onViewDetails }) => {
 
   const imageUrl = product.mainImageUrl || product.image || product.images?.[0]?.url || null;
   const sellerId = product.sellerId || product.sellerID || product.sellerid || 'N/A';
+  const productColor = product.color || 'N/A';
+
+  // Get available colors from variants
+  const availableColors = useMemo(() => {
+    if (product.variants && product.variants.length > 0) {
+      const colors = new Set();
+      product.variants.forEach(variant => {
+        if (variant.color) colors.add(variant.color);
+      });
+      return Array.from(colors);
+    }
+    return productColor !== 'N/A' ? [productColor] : [];
+  }, [product.variants, productColor]);
 
   // --- MODIFIED PRICE LOGIC START ---
   let price = Number(product.price) || 0;
@@ -800,7 +839,7 @@ const ProductCard = React.memo(({ product, index, onViewDetails }) => {
     const firstVariant = variants[0];
     const firstVariantPrice = Number(firstVariant.price) || 0;
     const firstVariantOfferPrice = Number(firstVariant.offerPrice) || 0;
-    
+
     // Use variant price/offerPrice if it's valid (> 0)
     if (firstVariantPrice > 0) {
       price = firstVariantPrice;
@@ -841,11 +880,11 @@ const ProductCard = React.memo(({ product, index, onViewDetails }) => {
           </span>
         </div>
 
-        {/* Stock Badge */}
+        {/* Stock Badge - More prominent */}
         <div className="absolute top-2 right-2">
-          <span className={`px-2 py-1 text-xs font-medium rounded-lg ${stockClass}`}>
-            {stock} in stock
-          </span>
+          <div className={`px-3 py-1.5 text-sm font-medium rounded-lg ${stockClass} shadow-sm`}>
+            <span className="font-bold">{stock}</span> in stock
+          </div>
         </div>
       </div>
 
@@ -853,72 +892,89 @@ const ProductCard = React.memo(({ product, index, onViewDetails }) => {
       <div className="p-4">
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 text-sm md:text-base truncate" title={productName}>
+            <h3 className="font-semibold text-gray-900 text-base md:text-lg truncate" title={productName}>
               {productName}
             </h3>
-            <p className="text-xs text-gray-500 mt-0.5 truncate">{displaySubCategory}</p>
+            <p className="text-sm text-gray-500 mt-1 truncate">{displaySubCategory}</p>
           </div>
           <div className="ml-2">
-            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
+            <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5">
-            <Hash className="w-3 h-3 text-gray-400" />
-            <span className="text-xs text-gray-600 font-mono" title={displaySku}>
+            <Hash className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-600 font-mono" title={displaySku}>
               {displaySku.length > 12 ? `${displaySku.substring(0, 12)}...` : displaySku}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <User className="w-3 h-3 text-gray-400" />
-            <span className="text-xs text-gray-600" title={sellerId}>
-              {sellerId.substring(0, 6)}...
-            </span>
-          </div>
+          {availableColors.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Palette className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-xs text-gray-600">
+                {availableColors.length} color{availableColors.length > 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Price and Offer Price Display */}
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="font-bold text-gray-900 text-base md:text-lg">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-900 text-xl">
               ₹{finalPrice.toLocaleString()}
             </span>
             {showDiscount && (
-              <span className="ml-2 text-xs line-through text-gray-500">
+              <span className="text-sm line-through text-gray-500">
                 ₹{price.toLocaleString()}
               </span>
-            )}
-            {!showDiscount && price > 0 && (
-              <span className="text-xs text-gray-500 ml-1"> (Original)</span>
-            )}
-            {/* Display (Price Missing) only if price is still 0 after checking variants */}
-            {price === 0 && (
-                <span className="text-sm text-red-500 ml-1"> (Price Missing)</span>
             )}
           </div>
 
           {showDiscount && (
-            <span className="px-2 py-1 bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold rounded-lg">
+            <span className="px-2.5 py-1 bg-gradient-to-r from-green-500 to-green-600 text-white text-sm font-semibold rounded-lg shadow-sm">
               -{Math.round((1 - offerPrice / price) * 100)}%
             </span>
           )}
         </div>
-        {/* --- MODIFICATION END --- */}
 
         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
           <button
-            className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+            className="px-4 py-2 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-1.5"
             onClick={(e) => {
               e.stopPropagation();
               onViewDetails(product);
             }}
           >
-            <Eye className="inline w-3 h-3 mr-1" /> View
+            <Eye className="w-4 h-4" /> View
           </button>
-          <span className="text-xs text-gray-500">
-            {product.productTag || 'General'}
-          </span>
+          <div className="flex items-center gap-2">
+            {productColor !== 'N/A' && (
+              <div className="flex items-center gap-1 text-xs text-gray-500">
+                <div
+                  className="w-3 h-3 rounded-full border border-gray-300"
+                  style={{
+                    backgroundColor: productColor.toLowerCase() === 'black' ? '#000' :
+                      productColor.toLowerCase() === 'white' ? '#fff' :
+                        productColor.toLowerCase() === 'red' ? '#ff0000' :
+                          productColor.toLowerCase() === 'blue' ? '#0000ff' :
+                            productColor.toLowerCase() === 'green' ? '#00ff00' :
+                              productColor.toLowerCase() === 'yellow' ? '#ffff00' :
+                                productColor.toLowerCase() === 'pink' ? '#ffc0cb' :
+                                  productColor.toLowerCase() === 'purple' ? '#800080' :
+                                    productColor.toLowerCase() === 'orange' ? '#ffa500' :
+                                      productColor.toLowerCase() === 'brown' ? '#a52a2a' :
+                                        productColor.toLowerCase() === 'gray' ? '#808080' : '#e5e7eb'
+                  }}
+                />
+                <span className="text-xs">{productColor}</span>
+              </div>
+            )}
+            <span className="text-xs text-gray-500">
+              {product.productTag || 'General'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -935,6 +991,16 @@ const ProductDetailsModal = React.memo(({
   const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState(product);
   const [activeTab, setActiveTab] = useState('details');
+
+  // Calculate total stock from variants if available
+  const calculateTotalStock = useCallback((prod) => {
+    if (prod.variants && prod.variants.length > 0) {
+      return prod.variants.reduce((total, variant) => {
+        return total + (Number(variant.stock) || 0);
+      }, 0);
+    }
+    return prod.stockQuantity || prod.stock || 0;
+  }, []);
 
   useEffect(() => {
     setFormData({
@@ -999,7 +1065,11 @@ const ProductDetailsModal = React.memo(({
   }, [onClose, isUpdatingDetails]);
 
   const displayData = isEditMode ? formData : product;
-  
+  const totalStock = calculateTotalStock(displayData);
+  const stockClass = totalStock > 10 ? 'bg-green-100 text-green-800 border border-green-200' :
+    totalStock > 0 ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+      'bg-red-100 text-red-800 border border-red-200';
+
   // --- MODIFIED PRICE LOGIC START: Apply variant price logic to modal display ---
   let modalPrice = Number(displayData.price) || 0;
   let modalOfferPrice = Number(displayData.offerPrice) || 0;
@@ -1010,25 +1080,17 @@ const ProductDetailsModal = React.memo(({
     const firstVariant = variants[0];
     const firstVariantPrice = Number(firstVariant.price) || 0;
     const firstVariantOfferPrice = Number(firstVariant.offerPrice) || 0;
-    
+
     // Use variant price/offerPrice if it's valid (> 0)
     if (firstVariantPrice > 0) {
       modalPrice = firstVariantPrice;
       modalOfferPrice = firstVariantOfferPrice;
     }
   }
-
-  // Use form data's price/offerPrice if in edit mode, but respect variant logic for display if price is 0.
-  // When editing, we rely on formData's direct values for inputs.
   const productPrice = isEditMode ? (formData.price || 0) : modalPrice;
   const productOfferPrice = isEditMode ? (formData.offerPrice || 0) : modalOfferPrice;
-  
-  // --- MODIFIED PRICE LOGIC END ---
-
   const productName = displayData.name || displayData.brand || 'Generic Product';
   const displaySku = displayData.basesku || displayData.sku || 'N/A';
-  const stock = displayData.stockQuantity || displayData.stock || 0;
-  const stockClass = stock > 10 ? 'bg-green-100 text-green-800' : stock > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
   const isDisabled = isUpdatingDetails;
 
   const category = displayData.category ?
@@ -1043,6 +1105,7 @@ const ProductDetailsModal = React.memo(({
 
   const imageUrl = displayData.mainImageUrl || displayData.image || displayData.images?.[0]?.url || null;
   const sellerId = displayData.sellerId || displayData.sellerID || displayData.sellerid || 'N/A';
+  const productColor = displayData.color || 'N/A';
 
 
   return (
@@ -1061,6 +1124,9 @@ const ProductDetailsModal = React.memo(({
                   <code className="text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded font-mono" title={displaySku}>
                     SKU: {displaySku.length > 20 ? `${displaySku.substring(0, 20)}...` : displaySku}
                   </code>
+                  <div className={`px-2 py-0.5 text-xs font-medium rounded-lg ${stockClass}`}>
+                    <span className="font-bold">{totalStock}</span> in stock
+                  </div>
                   {isEditMode && (
                     <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Editing</span>
                   )}
@@ -1126,24 +1192,48 @@ const ProductDetailsModal = React.memo(({
                     )}
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Stock Status:</span>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-lg ${stockClass}`}>
-                        {stock} units
-                      </span>
+                      <span className="text-sm font-medium text-gray-700">Total Stock:</span>
+                      <div className={`px-3 py-1.5 text-sm font-medium rounded-lg ${stockClass}`}>
+                        <span className="font-bold">{totalStock}</span> units
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Subcategory:</span>
-                      <span className="text-sm font-medium text-gray-900">{subCategory}</span>
+                      <span className="text-sm font-medium text-gray-700">Subcategory:</span>
+                      <span className="text-sm font-semibold text-gray-900">{subCategory}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Category:</span>
-                      <span className="text-sm font-medium text-gray-900">{category}</span>
+                      <span className="text-sm font-medium text-gray-700">Category:</span>
+                      <span className="text-sm font-semibold text-gray-900">{category}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Product Tag:</span>
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs font-medium rounded">
+                      <span className="text-sm font-medium text-gray-700">Color:</span>
+                      <div className="flex items-center gap-2">
+                        {productColor !== 'N/A' && (
+                          <div
+                            className="w-4 h-4 rounded-full border border-gray-300"
+                            style={{
+                              backgroundColor: productColor.toLowerCase() === 'black' ? '#000' :
+                                productColor.toLowerCase() === 'white' ? '#fff' :
+                                  productColor.toLowerCase() === 'red' ? '#ff0000' :
+                                    productColor.toLowerCase() === 'blue' ? '#0000ff' :
+                                      productColor.toLowerCase() === 'green' ? '#00ff00' :
+                                        productColor.toLowerCase() === 'yellow' ? '#ffff00' :
+                                          productColor.toLowerCase() === 'pink' ? '#ffc0cb' :
+                                            productColor.toLowerCase() === 'purple' ? '#800080' :
+                                              productColor.toLowerCase() === 'orange' ? '#ffa500' :
+                                                productColor.toLowerCase() === 'brown' ? '#a52a2a' :
+                                                  productColor.toLowerCase() === 'gray' ? '#808080' : '#e5e7eb'
+                            }}
+                          />
+                        )}
+                        <span className="text-sm font-medium text-gray-900">{productColor}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Product Tag:</span>
+                      <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-medium rounded">
                         {product.productTag || 'General'}
                       </span>
                     </div>
@@ -1167,7 +1257,7 @@ const ProductDetailsModal = React.memo(({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       />
                     ) : (
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 font-medium text-sm">{productName}</div>
+                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 font-medium text-base">{productName}</div>
                     )}
                   </div>
 
@@ -1184,7 +1274,7 @@ const ProductDetailsModal = React.memo(({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       />
                     ) : (
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 text-sm">{product.brand || 'N/A'}</div>
+                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 text-sm font-medium">{product.brand || 'N/A'}</div>
                     )}
                   </div>
 
@@ -1201,7 +1291,27 @@ const ProductDetailsModal = React.memo(({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       />
                     ) : (
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 text-sm">{product.color || 'N/A'}</div>
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                        {productColor !== 'N/A' && (
+                          <div
+                            className="w-4 h-4 rounded-full border border-gray-300"
+                            style={{
+                              backgroundColor: productColor.toLowerCase() === 'black' ? '#000' :
+                                productColor.toLowerCase() === 'white' ? '#fff' :
+                                  productColor.toLowerCase() === 'red' ? '#ff0000' :
+                                    productColor.toLowerCase() === 'blue' ? '#0000ff' :
+                                      productColor.toLowerCase() === 'green' ? '#00ff00' :
+                                        productColor.toLowerCase() === 'yellow' ? '#ffff00' :
+                                          productColor.toLowerCase() === 'pink' ? '#ffc0cb' :
+                                            productColor.toLowerCase() === 'purple' ? '#800080' :
+                                              productColor.toLowerCase() === 'orange' ? '#ffa500' :
+                                                productColor.toLowerCase() === 'brown' ? '#a52a2a' :
+                                                  productColor.toLowerCase() === 'gray' ? '#808080' : '#e5e7eb'
+                            }}
+                          />
+                        )}
+                        <span className="text-gray-900 text-sm font-medium">{productColor}</span>
+                      </div>
                     )}
                   </div>
 
@@ -1212,7 +1322,6 @@ const ProductDetailsModal = React.memo(({
                       <input
                         type="number"
                         name="price"
-                        // Use formData for input value in edit mode
                         value={formData.price || 0}
                         onChange={handleInputChange}
                         disabled={isDisabled}
@@ -1220,8 +1329,7 @@ const ProductDetailsModal = React.memo(({
                       />
                     ) : (
                       <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                        {/* Use calculated productPrice for display */}
-                        <span className="text-gray-900 font-semibold text-sm">
+                        <span className="text-gray-900 font-bold text-base">
                           {productPrice > 0 ? `₹${productPrice.toLocaleString()}` : '₹0 (Price Missing)'}
                         </span>
                       </div>
@@ -1235,7 +1343,6 @@ const ProductDetailsModal = React.memo(({
                       <input
                         type="number"
                         name="offerPrice"
-                        // Use formData for input value in edit mode
                         value={formData.offerPrice || 0}
                         onChange={handleInputChange}
                         disabled={isDisabled}
@@ -1243,8 +1350,7 @@ const ProductDetailsModal = React.memo(({
                       />
                     ) : (
                       <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                        {/* Use calculated productOfferPrice for display */}
-                        <span className={`text-sm ${productOfferPrice && productOfferPrice < productPrice && productOfferPrice > 0 ? 'text-green-600 font-semibold' : 'text-gray-500'}`}>
+                        <span className={`text-sm ${productOfferPrice && productOfferPrice < productPrice && productOfferPrice > 0 ? 'text-green-600 font-bold' : 'text-gray-500'}`}>
                           {productOfferPrice && productOfferPrice < productPrice && productOfferPrice > 0 ? `₹${productOfferPrice.toLocaleString()}` : 'No offer'}
                         </span>
                       </div>
@@ -1253,7 +1359,7 @@ const ProductDetailsModal = React.memo(({
 
                   {/* Stock */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Stock Quantity</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Main Stock Quantity</label>
                     {isEditMode ? (
                       <input
                         type="number"
@@ -1266,7 +1372,7 @@ const ProductDetailsModal = React.memo(({
                     ) : (
                       <div className="px-3 py-2 bg-gray-50 rounded-lg">
                         <span className={`text-sm font-medium ${stockClass.includes('green') ? 'text-green-700' : stockClass.includes('yellow') ? 'text-yellow-700' : 'text-red-700'}`}>
-                          {stock}
+                          {product.stockQuantity || product.stock || 0}
                         </span>
                       </div>
                     )}
@@ -1285,7 +1391,7 @@ const ProductDetailsModal = React.memo(({
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                       />
                     ) : (
-                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 text-sm">{product.hsnCode || 'N/A'}</div>
+                      <div className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 text-sm font-medium">{product.hsnCode || 'N/A'}</div>
                     )}
                   </div>
 
@@ -1305,7 +1411,7 @@ const ProductDetailsModal = React.memo(({
                       </select>
                     ) : (
                       <div className="px-3 py-2 bg-gray-50 rounded-lg">
-                        <span className={`text-sm font-medium ${product.cashOnDelivery === 'Yes' ? 'text-green-600' : 'text-gray-600'}`}>
+                        <span className={`text-sm font-medium ${product.cashOnDelivery === 'Yes' ? 'text-green-600 font-semibold' : 'text-gray-600'}`}>
                           {product.cashOnDelivery || 'No'}
                         </span>
                       </div>
@@ -1367,7 +1473,12 @@ const ProductDetailsModal = React.memo(({
           {activeTab === 'variants' && variants.length > 0 && (
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-xl p-4">
-                <h3 className="font-semibold text-gray-900 text-sm mb-3">Product Variants ({variants.length})</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-900 text-base">Product Variants ({variants.length})</h3>
+                  <div className={`px-3 py-1.5 text-sm font-medium rounded-lg ${stockClass}`}>
+                    Total: <span className="font-bold">{totalStock}</span> units
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -1380,28 +1491,54 @@ const ProductDetailsModal = React.memo(({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {variants.map((variant, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-3 py-2">{variant.color || 'N/A'}</td>
-                          <td className="px-3 py-2">{variant.size || 'N/A'}</td>
-                          <td className="px-3 py-2 font-medium">₹{variant.price ? variant.price.toLocaleString() : '0'}</td>
-                          <td className="px-3 py-2">
-                            {variant.offerPrice && variant.offerPrice < variant.price ? (
-                              <span className="text-green-600 font-medium">₹{variant.offerPrice.toLocaleString()}</span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${variant.stock > 10 ? 'bg-green-100 text-green-800' :
-                                variant.stock > 0 ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-red-100 text-red-800'
-                              }`}>
-                              {variant.stock || 0}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {variants.map((variant, index) => {
+                        const variantStock = Number(variant.stock) || 0;
+                        const variantStockClass = variantStock > 10 ? 'bg-green-100 text-green-800' :
+                          variantStock > 0 ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800';
+
+                        return (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                {variant.color && (
+                                  <div
+                                    className="w-3 h-3 rounded-full border border-gray-300"
+                                    style={{
+                                      backgroundColor: variant.color.toLowerCase() === 'black' ? '#000' :
+                                        variant.color.toLowerCase() === 'white' ? '#fff' :
+                                          variant.color.toLowerCase() === 'red' ? '#ff0000' :
+                                            variant.color.toLowerCase() === 'blue' ? '#0000ff' :
+                                              variant.color.toLowerCase() === 'green' ? '#00ff00' :
+                                                variant.color.toLowerCase() === 'yellow' ? '#ffff00' :
+                                                  variant.color.toLowerCase() === 'pink' ? '#ffc0cb' :
+                                                    variant.color.toLowerCase() === 'purple' ? '#800080' :
+                                                      variant.color.toLowerCase() === 'orange' ? '#ffa500' :
+                                                        variant.color.toLowerCase() === 'brown' ? '#a52a2a' :
+                                                          variant.color.toLowerCase() === 'gray' ? '#808080' : '#e5e7eb'
+                                    }}
+                                  />
+                                )}
+                                <span>{variant.color || 'N/A'}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 font-medium">{variant.size || 'N/A'}</td>
+                            <td className="px-3 py-2 font-bold">₹{variant.price ? variant.price.toLocaleString() : '0'}</td>
+                            <td className="px-3 py-2">
+                              {variant.offerPrice && variant.offerPrice < variant.price ? (
+                                <span className="text-green-600 font-bold">₹{variant.offerPrice.toLocaleString()}</span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${variantStockClass}`}>
+                                {variantStock} units
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1417,7 +1554,7 @@ const ProductDetailsModal = React.memo(({
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">Seller Information</h3>
+                    <h3 className="font-semibold text-gray-900 text-base">Seller Information</h3>
                     <p className="text-xs text-gray-600">Product owner details</p>
                   </div>
                 </div>
@@ -1436,7 +1573,7 @@ const ProductDetailsModal = React.memo(({
                       <Calendar className="w-4 h-4 text-gray-400" />
                       <span className="text-xs font-medium text-gray-700">Added On</span>
                     </div>
-                    <span className="text-sm text-gray-900">
+                    <span className="text-sm text-gray-900 font-medium">
                       {product.createdAt ? new Date(product.createdAt).toLocaleDateString() : 'N/A'}
                     </span>
                   </div>
@@ -1446,7 +1583,7 @@ const ProductDetailsModal = React.memo(({
                       <CheckCircle className="w-4 h-4 text-gray-400" />
                       <span className="text-xs font-medium text-gray-700">Status</span>
                     </div>
-                    <span className="text-sm text-gray-900">
+                    <span className="text-sm text-gray-900 font-medium">
                       {product.status || 'Active'}
                     </span>
                   </div>
