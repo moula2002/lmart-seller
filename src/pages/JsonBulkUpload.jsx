@@ -20,12 +20,13 @@ import {
   query,
   where,
   orderBy,
-  serverTimestamp 
+  serverTimestamp,
+  getDoc // <--- ADDED: Necessary for fetching category/subcategory by ID
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../config/firebase';
 
-const JsonBulkUpload = () => {
+const BulkUpload = () => {
   const [products, setProducts] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -68,6 +69,54 @@ const JsonBulkUpload = () => {
     } finally {
       setLoadingHistory(false);
     }
+  };
+
+  /**
+   * Fetches category and subcategory names from Firestore using their IDs.
+   * @param {Set<string>} categoryIds - Set of unique Category IDs.
+   * @param {Set<string>} subCategoryIds - Set of unique Subcategory IDs.
+   * @returns {Promise<Map<string, string>>} A map where key is the ID (or 'sub-'+ID) and value is the name.
+   */
+  const fetchCategoryNames = async (categoryIds, subCategoryIds) => {
+    const nameMap = new Map();
+    
+    // Fetch Category Names
+    const categoryPromises = Array.from(categoryIds).map(async (id) => {
+      try {
+        const docRef = doc(db, 'categories', id);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists() && docSnap.data().name) {
+          nameMap.set(id, docSnap.data().name);
+        } else {
+          nameMap.set(id, id); // Fallback to ID if not found or name is missing
+        }
+      } catch (error) {
+        console.error(`Error fetching category ${id}:`, error);
+        nameMap.set(id, id);
+      }
+    });
+
+    // Fetch Subcategory Names
+    const subCategoryPromises = Array.from(subCategoryIds).map(async (id) => {
+      try {
+        const docRef = doc(db, 'subcategories', id);
+        const docSnap = await getDoc(docRef);
+        
+        // Use a unique key like 'sub-' + id to avoid collision with category IDs
+        if (docSnap.exists() && docSnap.data().name) {
+          nameMap.set('sub-' + id, docSnap.data().name); 
+        } else {
+          nameMap.set('sub-' + id, id); // Fallback to ID
+        }
+      } catch (error) {
+        console.error(`Error fetching subcategory ${id}:`, error);
+        nameMap.set('sub-' + id, id);
+      }
+    });
+
+    await Promise.all([...categoryPromises, ...subCategoryPromises]);
+    return nameMap;
   };
 
   // Generate search keywords from product name
@@ -123,82 +172,123 @@ const JsonBulkUpload = () => {
     setLoading(true);
     const newUploadedFiles = [];
     const allProducts = [];
-    const categoryMap = new Map();
+    
+    // Sets to track unique IDs
+    const categoryIdSet = new Set(); // <--- Tracks Category IDs
+    const subCategoryIdSet = new Set(); // <--- Tracks Subcategory IDs
     const brandMap = new Map();
 
-    for (let index = 0; index < files.length; index++) {
-      const file = files[index];
-      
-      try {
-        // Upload file to Firebase Storage
-        const storageRef = ref(storage, `product-uploads/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        const fileUrl = await getDownloadURL(storageRef);
+    const filePromises = files.map((file, index) => {
+        return new Promise((resolve) => {
+            try {
+                // Upload file to Firebase Storage
+                const storageRef = ref(storage, `product-uploads/${Date.now()}_${file.name}`);
+                uploadBytes(storageRef, file).then(snapshot => {
+                    getDownloadURL(storageRef).then(fileUrl => {
+                        const reader = new FileReader();
+                        
+                        reader.onload = (e) => {
+                            try {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                                const excelData = XLSX.utils.sheet_to_json(firstSheet);
+                                
+                                // Track categories, subcategories, and brands from Excel
+                                excelData.forEach(row => {
+                                    if (row.CategoryID && row.CategoryID !== 'N/A') {
+                                        categoryIdSet.add(row.CategoryID);
+                                    }
+                                    if (row.SubCategoryID && row.SubCategoryID !== 'N/A') { // <--- Track Subcategory IDs
+                                        subCategoryIdSet.add(row.SubCategoryID);
+                                    }
+                                    if (row.Brand && row.Brand !== 'N/A') {
+                                        brandMap.set(row.Brand, row.Brand);
+                                    }
+                                });
+                                
+                                // Transform Excel data to match your Firestore schema
+                                const transformedProducts = transformExcelData(excelData, file.name, fileUrl);
+                                
+                                allProducts.push(...transformedProducts);
+                                newUploadedFiles.push({
+                                    name: file.name,
+                                    size: (file.size / 1024).toFixed(2) + ' KB',
+                                    productsCount: transformedProducts.length,
+                                    status: 'success',
+                                    timestamp: new Date().toLocaleTimeString(),
+                                    fileUrl: fileUrl
+                                });
 
-        const reader = new FileReader();
-        
-        reader.onload = (e) => {
-          try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const excelData = XLSX.utils.sheet_to_json(firstSheet);
-            
-            // Track categories and brands from Excel
-            excelData.forEach(row => {
-              if (row.CategoryID && row.CategoryID !== 'N/A') {
-                categoryMap.set(row.CategoryID, {
-                  id: row.CategoryID,
-                  name: row.CategoryID // Use ID as name if not provided
+                                resolve(); // Resolve the promise for this file
+                            } catch (error) {
+                                console.error('Error reading file:', error);
+                                handleUploadError(file, error);
+                                resolve();
+                            }
+                        };
+                        
+                        reader.readAsArrayBuffer(file);
+                    }).catch(err => {
+                        console.error('Error getting download URL:', err);
+                        handleUploadError(file, err);
+                        resolve();
+                    });
+                }).catch(err => {
+                    console.error('Error uploading file to storage:', err);
+                    handleUploadError(file, err);
+                    resolve();
                 });
-              }
-              if (row.Brand && row.Brand !== 'N/A') {
-                brandMap.set(row.Brand, row.Brand);
-              }
-            });
-            
-            // Transform Excel data to match your Firestore schema
-            const transformedProducts = transformExcelData(excelData, file.name, fileUrl);
-            
-            allProducts.push(...transformedProducts);
-            newUploadedFiles.push({
-              name: file.name,
-              size: (file.size / 1024).toFixed(2) + ' KB',
-              productsCount: transformedProducts.length,
-              status: 'success',
-              timestamp: new Date().toLocaleTimeString(),
-              fileUrl: fileUrl
-            });
-
-            // If this is the last file, update state
-            if (index === files.length - 1) {
-              setProducts(prev => [...prev, ...allProducts]);
-              setUploadedFiles(prev => [...prev, ...newUploadedFiles]);
-              performAnalysis([...products, ...allProducts]);
-              
-              // Set Excel stats
-              setExcelStats({
-                categories: Array.from(categoryMap.values()),
-                brands: Array.from(brandMap.values()),
-                totalRows: excelData.length
-              });
-              
-              setLoading(false);
+            } catch (error) {
+                console.error('Error processing file:', error);
+                handleUploadError(file, error);
+                resolve();
             }
-          } catch (error) {
-            console.error('Error reading file:', error);
-            handleUploadError(file, error, index, files.length, newUploadedFiles);
-          }
-        };
-        
-        reader.readAsArrayBuffer(file);
-      } catch (error) {
-        console.error('Error uploading file:', error);
-        handleUploadError(file, error, index, files.length, newUploadedFiles);
-      }
-    }
-  };
+        });
+    });
 
+    await Promise.all(filePromises);
+    
+    // --- Post-Upload Processing ---
+    
+    // 1. Fetch category and subcategory names using the collected IDs
+    const nameMap = await fetchCategoryNames(categoryIdSet, subCategoryIdSet); 
+
+    // 2. Map the fetched names onto the transformed products
+    const updatedAllProducts = allProducts.map(productGroup => {
+        const catId = productGroup.baseInfo.category?.id;
+        const subCatId = productGroup.baseInfo.subCategory?.id;
+
+        // Retrieve the fetched name, falling back to the ID or existing name if needed
+        const categoryName = catId ? nameMap.get(catId) : productGroup.baseInfo.category?.name;
+        const subCategoryName = subCatId ? nameMap.get('sub-' + subCatId) : productGroup.baseInfo.subCategory?.name;
+        
+        return {
+            ...productGroup,
+            baseInfo: {
+                ...productGroup.baseInfo,
+                // Update with the fetched name
+                category: catId ? { id: catId, name: categoryName } : null,
+                subCategory: subCatId ? { id: subCatId, name: subCategoryName } : null,
+            }
+        };
+    });
+
+    setProducts(prev => [...prev, ...updatedAllProducts]);
+    setUploadedFiles(prev => [...prev, ...newUploadedFiles]);
+    performAnalysis([...products, ...updatedAllProducts]);
+    
+    // Set Excel stats
+    setExcelStats({
+      // Use the resolved names for the stats display
+      categories: Array.from(categoryIdSet).map(id => ({ id, name: nameMap.get(id) || id })),
+      brands: Array.from(brandMap.values()),
+      totalRows: allProducts.length // This might be slightly off if multiple files failed entirely, but is a close proxy
+    });
+    
+    setLoading(false);
+  };
+  
   // Transform Excel data to match your Firestore schema
   const transformExcelData = (excelData, fileName, fileUrl) => {
     // Group by SKU to handle variants
@@ -222,11 +312,11 @@ const JsonBulkUpload = () => {
             status: 'Active',
             category: row.CategoryID ? {
               id: row.CategoryID,
-              name: row.CategoryID
+              name: row.CategoryID // Temporary name (ID), will be updated by fetchCategoryNames later
             } : null,
             subCategory: row.SubCategoryID ? {
               id: row.SubCategoryID,
-              name: row.SubCategoryID
+              name: row.SubCategoryID // Temporary name (ID), will be updated by fetchCategoryNames later
             } : null,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -308,20 +398,15 @@ const JsonBulkUpload = () => {
     });
   };
 
-  const handleUploadError = (file, error, index, totalFiles, newUploadedFiles) => {
-    newUploadedFiles.push({
+  const handleUploadError = (file, error) => {
+    setUploadedFiles(prev => [...prev, {
       name: file.name,
       size: (file.size / 1024).toFixed(2) + ' KB',
       productsCount: 0,
       status: 'error',
       error: error.message,
       timestamp: new Date().toLocaleTimeString()
-    });
-    
-    if (index === totalFiles - 1) {
-      setUploadedFiles(prev => [...prev, ...newUploadedFiles]);
-      setLoading(false);
-    }
+    }]);
   };
 
   // Save products to Firebase in your schema format
@@ -345,7 +430,8 @@ const JsonBulkUpload = () => {
           fileUrl: file.fileUrl
         })),
         sellers: uniqueSellers,
-        categories: excelStats?.categories || [],
+        // Save the categories and brands with their resolved names
+        categories: excelStats?.categories || [], 
         brands: excelStats?.brands || [],
         uploadedAt: serverTimestamp(),
         processedAt: new Date().toISOString(),
@@ -412,7 +498,7 @@ const JsonBulkUpload = () => {
             sellerId: data.sellerId,
             status: data.status,
             category: data.category,
-            subCategory: data.subCategory,
+            subCategory: data.subCategory, // <--- Now includes resolved subCategory name
             mainImageUrl: data.mainImageUrl,
             imageUrls: data.imageUrls || [],
             sourceFile: data.sourceFile,
@@ -607,8 +693,8 @@ const JsonBulkUpload = () => {
         Brand: product.baseInfo.brand,
         CategoryID: product.baseInfo.category?.id,
         CategoryName: product.baseInfo.category?.name,
-        SubCategoryID: product.baseInfo.subCategory?.id,
-        SubCategoryName: product.baseInfo.subCategory?.name,
+        SubCategoryID: product.baseInfo.subCategory?.id, // <--- Exporting SubCategoryID
+        SubCategoryName: product.baseInfo.subCategory?.name, // <--- Exporting SubCategoryName
         SellerId: product.baseInfo.sellerId,
         HSNCode: product.baseInfo.hsnCode,
         Variant_Color: variant.color,
@@ -688,7 +774,7 @@ const JsonBulkUpload = () => {
               <Upload className="w-8 h-8 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Upload</h1>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Bulk Product Upload</h1>
               <p className="text-gray-600 mt-1">Upload Excel files directly</p>
             </div>
           </div>
@@ -704,7 +790,7 @@ const JsonBulkUpload = () => {
               ) : (
                 <Save className="w-4 h-4" />
               )}
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : 'Save Products'}
             </button>
             <button
               onClick={exportToExcel}
@@ -732,16 +818,25 @@ const JsonBulkUpload = () => {
               <Info className="w-5 h-5" />
               Excel File Analysis
             </h3>
-          
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500">Total Rows Processed</p>
+                    <p className="text-xl font-bold text-gray-900">{excelStats.totalRows}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500">Unique Categories</p>
+                    <p className="text-xl font-bold text-gray-900">{excelStats.categories.length}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                    <p className="text-sm text-gray-500">Unique Brands</p>
+                    <p className="text-xl font-bold text-gray-900">{excelStats.brands.length}</p>
+                </div>
+            </div>
           </div>
         )}
 
-        {/* Upload Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-         
-         
-            
-        </div>
+        {/* Upload Stats (Moved into Excel Stats for simplicity in this file) */}
+        {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6"></div> */}
       </div>
 
       {/* Main Content */}
@@ -1089,9 +1184,14 @@ const JsonBulkUpload = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                                {product.baseInfo.category?.name || 'N/A'}
-                              </span>
+                              <div className='flex flex-col space-y-1'>
+                                <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                                  {product.baseInfo.category?.name || 'N/A'}
+                                </span>
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
+                                  {product.baseInfo.subCategory?.name || 'N/A'}
+                                </span>
+                              </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="space-y-1">
@@ -1180,4 +1280,4 @@ const JsonBulkUpload = () => {
   );
 };
 
-export default JsonBulkUpload;
+export default BulkUpload;

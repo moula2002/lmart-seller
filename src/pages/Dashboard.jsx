@@ -7,7 +7,7 @@ import AddProduct from './AddProduct'
 import SellerProducts from './SellerProducts'
 import OrderDetails from './OrderDetails'
 import JsonBulkUpload from './JsonBulkUpload'
-import PythonAutomation from './PythonAutomation'
+// import PythonAutomation from './PythonAutomation'
 import { useSeller } from '../context/SellerContext'
 import { auth, db } from '../config/firebase'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
@@ -55,8 +55,8 @@ const Dashboard = () => {
     { id: 'products', label: 'My Products', icon: Package },
     { id: 'orders', label: 'Order Details', icon: ShoppingCart },
     { id: 'add-product', label: 'Add Products', icon: Plus },
-    { id: 'bulk-upload', label: 'JSON Bulk Upload', icon: Upload },
-    { id: 'automation', label: 'Python Automation', icon: Bot }
+    { id: 'bulk-upload', label: 'Bulk Upload', icon: Upload },
+    // { id: 'automation', label: 'Python Automation', icon: Bot }
   ]
 
   const handleLogout = async () => {
@@ -79,7 +79,7 @@ const Dashboard = () => {
       case 'bulk-upload':
         return <JsonBulkUpload />
       case 'automation':
-        return <PythonAutomation />
+        // return <PythonAutomation />
       default:
         return null
     }

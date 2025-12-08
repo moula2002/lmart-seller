@@ -8,7 +8,9 @@ import {
   where,
   doc,
   getDoc,
-  updateDoc
+  updateDoc,
+  addDoc,
+  serverTimestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db, auth } from '../config/firebase';
@@ -35,7 +37,11 @@ import {
   Calendar,
   CheckCircle,
   AlertCircle,
-  Palette
+  Palette,
+  ShoppingCart,
+  Users,
+  CreditCard,
+  Truck
 } from 'lucide-react';
 
 const SellerProducts = React.memo(() => {
@@ -53,10 +59,23 @@ const SellerProducts = React.memo(() => {
     totalProducts: 0,
     totalStock: 0,
     totalValue: 0,
-    averagePrice: 0
+    averagePrice: 0,
+    totalSold: 0,
+    totalRevenue: 0
   });
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [message, setMessage] = useState('');
+  const [recentSales, setRecentSales] = useState([]);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [purchaseData, setPurchaseData] = useState({
+    productId: '',
+    productName: '',
+    quantity: 1,
+    customerName: '',
+    customerPhone: '',
+    paymentMethod: 'cash',
+    notes: ''
+  });
 
   const navigate = useNavigate();
 
@@ -98,12 +117,13 @@ const SellerProducts = React.memo(() => {
 
   const calculateSellerStats = useCallback((productsList) => {
     if (productsList.length === 0) {
-      setSellerStats({
+      setSellerStats(prev => ({
+        ...prev,
         totalProducts: 0,
         totalStock: 0,
         totalValue: 0,
         averagePrice: 0
-      });
+      }));
       return;
     }
 
@@ -130,23 +150,51 @@ const SellerProducts = React.memo(() => {
       }
     });
 
-    setSellerStats({
+    setSellerStats(prev => ({
+      ...prev,
       totalProducts: productsList.length,
       totalStock: totalStock,
       totalValue: Math.round(totalValue),
       averagePrice: priceCount > 0 ? Math.round(priceSum / priceCount) : 0
-    });
+    }));
   }, []);
 
+  // Fetch recent sales
+  const fetchRecentSales = useCallback(async () => {
+    if (!sellerUid) return;
+    
+    try {
+      const salesQuery = query(
+        collection(db, 'sales'),
+        where('sellerId', '==', sellerUid)
+      );
+      const salesSnap = await getDocs(salesQuery);
+      const salesData = salesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 5); // Get last 5 sales
+      
+      setRecentSales(salesData);
+      
+      // Calculate total sold and revenue
+      const totalSold = salesData.reduce((sum, sale) => sum + (sale.quantity || 0), 0);
+      const totalRevenue = salesData.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0);
+      
+      setSellerStats(prev => ({
+        ...prev,
+        totalSold,
+        totalRevenue
+      }));
+    } catch (err) {
+      console.error('Error fetching sales:', err);
+    }
+  }, [sellerUid]);
+
   const fetchProducts = useCallback(async (isRefresh = false) => {
-    // Don't clear products if it's a refresh or adding new products
     if (isInitialLoad || isRefresh) {
       setLoading(true);
-      // Clear specific errors on refresh, but keep general error state until end of fetch
       if (isRefresh) {
         setError(null);
       }
-      // Only clear products on initial load or explicit refresh
       if (isInitialLoad || isRefresh) {
         setProducts([]);
       }
@@ -189,7 +237,6 @@ const SellerProducts = React.memo(() => {
           if (ownerMatches || ownerIdSet.size === 0) {
             setProducts([p]);
             calculateSellerStats([p]);
-            // Clear error if a product is successfully fetched
             setError(null);
           } else {
             setProducts([]);
@@ -214,7 +261,7 @@ const SellerProducts = React.memo(() => {
         if (products.length === 0 && !isInitialLoad && !isRefresh) {
           setError('No seller signed in.');
         } else if (isInitialLoad || isRefresh) {
-          setError(null); // Explicitly don't show the error on initial load or refresh if product list might be empty but is still loading
+          setError(null);
         }
         setLoading(false);
         setIsInitialLoad(false);
@@ -290,7 +337,7 @@ const SellerProducts = React.memo(() => {
 
         setLoading(false);
         setIsInitialLoad(false);
-        setError(null); // Clear error if products are successfully fetched
+        setError(null);
         return;
       }
 
@@ -307,7 +354,6 @@ const SellerProducts = React.memo(() => {
           return A < B ? -1 : A > B ? 1 : 0;
         });
 
-        // Merge with existing products to keep both old and new
         if (!isInitialLoad && !isRefresh && products.length > 0) {
           const mergedProducts = mergeUniqueById(products, data);
           setProducts(mergedProducts);
@@ -319,7 +365,7 @@ const SellerProducts = React.memo(() => {
 
         setLoading(false);
         setIsInitialLoad(false);
-        setError(null); // Clear error if products are successfully fetched
+        setError(null); 
         return;
       } catch (fallbackErr) {
         console.error('Fallback fetch failed:', fallbackErr);
@@ -336,11 +382,9 @@ const SellerProducts = React.memo(() => {
     }
   }, [sellerUid, productIdFromPath, buildOwnerIdSet, calculateSellerStats, products, isInitialLoad]);
 
-  // Listen for new product additions from AddProduct page
   useEffect(() => {
     const handleNewProductAdded = (event) => {
       if (event.detail && event.detail.type === 'NEW_PRODUCT_ADDED') {
-        // Add the new product to the existing list
         if (event.detail.product) {
           const newProduct = event.detail.product;
           setProducts(prevProducts => {
@@ -349,7 +393,6 @@ const SellerProducts = React.memo(() => {
               const updatedProducts = [newProduct, ...prevProducts];
               calculateSellerStats(updatedProducts);
 
-              // Show success message
               setMessage('✅ New product added successfully!');
               setTimeout(() => setMessage(''), 3000);
 
@@ -368,12 +411,11 @@ const SellerProducts = React.memo(() => {
     };
   }, [calculateSellerStats]);
 
-  // Initial fetch on component mount
   useEffect(() => {
     fetchProducts();
+    fetchRecentSales();
   }, [sellerUid, productIdFromPath]);
 
-  // Function to manually add a new product (can be called from AddProduct page)
   const addNewProductToList = useCallback((newProduct) => {
     if (newProduct) {
       setProducts(prevProducts => {
@@ -426,6 +468,171 @@ const SellerProducts = React.memo(() => {
       setIsUpdatingDetails(false);
     }
   }, [products, calculateSellerStats]);
+
+  // NEW: Handle complete purchase with customer details
+  const handleCompletePurchase = useCallback(async () => {
+    if (!purchaseData.productId || purchaseData.quantity <= 0) {
+      setUpdateError('Please enter valid purchase details.');
+      return;
+    }
+
+    if (!purchaseData.customerName.trim()) {
+      setUpdateError('Please enter customer name.');
+      return;
+    }
+
+    setIsUpdatingDetails(true);
+    setUpdateError(null);
+
+    try {
+      // 1. Get current product details
+      const productRef = doc(db, 'products', purchaseData.productId);
+      const productSnap = await getDoc(productRef);
+
+      if (!productSnap.exists()) {
+        throw new Error('Product not found in database.');
+      }
+
+      const currentProduct = { id: productSnap.id, ...productSnap.data() };
+      const variants = currentProduct.variants || [];
+      let updatedVariants = [...variants];
+      let updatedMainStock = Number(currentProduct.stockQuantity ?? currentProduct.stock) || 0;
+      let remainingQuantity = purchaseData.quantity;
+
+      // Calculate product price
+      let productPrice = Number(currentProduct.price) || 0;
+      let productOfferPrice = Number(currentProduct.offerPrice) || 0;
+      const finalPrice = productOfferPrice > 0 && productOfferPrice < productPrice ? productOfferPrice : productPrice;
+
+      // 2. Deduct stock (similar logic as before)
+      if (variants.length > 0) {
+        updatedVariants = variants.map(variant => {
+          if (remainingQuantity <= 0) return variant;
+          
+          const variantStock = Number(variant.stock) || 0;
+          if (variantStock > 0) {
+            const deductFromVariant = Math.min(remainingQuantity, variantStock);
+            variant.stock = variantStock - deductFromVariant;
+            remainingQuantity -= deductFromVariant;
+          }
+          return variant;
+        });
+
+        if (remainingQuantity > 0) {
+          if (updatedMainStock >= remainingQuantity) {
+            updatedMainStock -= remainingQuantity;
+            remainingQuantity = 0;
+          } else {
+            throw new Error(`Insufficient total stock. Only ${(variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0) + updatedMainStock)} units available.`);
+          }
+        }
+      } else {
+        if (updatedMainStock >= remainingQuantity) {
+          updatedMainStock -= remainingQuantity;
+        } else {
+          throw new Error(`Insufficient stock. Only ${updatedMainStock} units available.`);
+        }
+      }
+
+      // 3. Update product stock in Firestore
+      const payload = {
+        stock: updatedMainStock,
+        stockQuantity: updatedMainStock,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (variants.length > 0) {
+        payload.variants = updatedVariants;
+      }
+
+      await updateDoc(productRef, payload);
+
+      // 4. Create sale record in 'sales' collection
+      const saleRecord = {
+        productId: purchaseData.productId,
+        productName: purchaseData.productName || currentProduct.name || currentProduct.brand,
+        sellerId: sellerUid,
+        sellerName: sellerDoc?.sellerName || sellerDoc?.name || 'Seller',
+        quantity: purchaseData.quantity,
+        unitPrice: finalPrice,
+        totalAmount: finalPrice * purchaseData.quantity,
+        customerName: purchaseData.customerName.trim(),
+        customerPhone: purchaseData.customerPhone.trim() || 'N/A',
+        paymentMethod: purchaseData.paymentMethod,
+        notes: purchaseData.notes.trim() || '',
+        status: 'completed',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'sales'), saleRecord);
+
+      // 5. Update local state
+      const updatedProduct = { 
+        ...currentProduct, 
+        ...payload,
+        variants: updatedVariants.length > 0 ? updatedVariants : currentProduct.variants
+      };
+      
+      if (selectedProduct && selectedProduct.id === purchaseData.productId) {
+        setSelectedProduct(updatedProduct);
+      }
+      
+      setProducts(prevProducts => {
+        const updatedProductsList = prevProducts.map(p =>
+          p.id === purchaseData.productId ? updatedProduct : p
+        );
+        calculateSellerStats(updatedProductsList);
+        return updatedProductsList;
+      });
+
+      // 6. Fetch updated sales
+      await fetchRecentSales();
+
+      // 7. Show success message
+      setMessage(`✅ Sale recorded successfully! ${purchaseData.quantity} unit(s) of ${purchaseData.productName} sold to ${purchaseData.customerName}. Total: ₹${(finalPrice * purchaseData.quantity).toLocaleString()}`);
+      setTimeout(() => setMessage(''), 5000);
+
+      // 8. Reset and close
+      setPurchaseData({
+        productId: '',
+        productName: '',
+        quantity: 1,
+        customerName: '',
+        customerPhone: '',
+        paymentMethod: 'cash',
+        notes: ''
+      });
+      setShowPurchaseModal(false);
+
+    } catch (err) {
+      console.error('Failed to complete purchase:', err);
+      setUpdateError(err.message || 'Failed to complete purchase. Check console.');
+    } finally {
+      setIsUpdatingDetails(false);
+    }
+  }, [purchaseData, sellerUid, sellerDoc, selectedProduct, products, calculateSellerStats, fetchRecentSales]);
+
+  // NEW: Open purchase modal for a product
+  const handleOpenPurchaseModal = useCallback((product) => {
+    const productName = product.name || product.brand || 'Product';
+    const productPrice = Number(product.price) || 0;
+    const productOfferPrice = Number(product.offerPrice) || 0;
+    const finalPrice = productOfferPrice > 0 && productOfferPrice < productPrice ? productOfferPrice : productPrice;
+    
+    setPurchaseData({
+      productId: product.id,
+      productName: productName,
+      quantity: 1,
+      customerName: '',
+      customerPhone: '',
+      paymentMethod: 'cash',
+      notes: '',
+      unitPrice: finalPrice
+    });
+    setShowPurchaseModal(true);
+    setUpdateError(null);
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const searchLower = searchTerm.toLowerCase();
@@ -482,8 +689,9 @@ const SellerProducts = React.memo(() => {
   }, []);
 
   const handleRefresh = useCallback(() => {
-    fetchProducts(true); // Pass true to indicate refresh
-  }, [fetchProducts]);
+    fetchProducts(true);
+    fetchRecentSales();
+  }, [fetchProducts, fetchRecentSales]);
 
   if (loading && isInitialLoad) {
     return (
@@ -552,7 +760,7 @@ const SellerProducts = React.memo(() => {
                 <Package className="w-6 h-6 md:w-8 md:h-8 text-white" />
               </div>
               <div>
-                <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900">Product Inventory</h1>
+                <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-gray-900">Seller Dashboard</h1>
                 {sellerDoc && (
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <User className="w-3 h-3 md:w-4 md:h-4 text-blue-600" />
@@ -607,23 +815,76 @@ const SellerProducts = React.memo(() => {
             <div className="bg-gradient-to-br from-white to-purple-50 rounded-xl md:rounded-2xl border border-purple-100 p-3 md:p-4 shadow-lg">
               <div className="flex items-center justify-between mb-2">
                 <div className="p-1.5 md:p-2 bg-purple-100 rounded-lg">
-                  <DollarSign className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+                  <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
                 </div>
-                <span className="text-lg md:text-2xl font-bold text-gray-900">₹{sellerStats.totalValue.toLocaleString()}</span>
+                <span className="text-lg md:text-2xl font-bold text-gray-900">{sellerStats.totalSold}</span>
               </div>
-              <h3 className="text-xs md:text-sm font-medium text-gray-700">Total Value</h3>
+              <h3 className="text-xs md:text-sm font-medium text-gray-700">Total Sold</h3>
             </div>
 
             <div className="bg-gradient-to-br from-white to-orange-50 rounded-xl md:rounded-2xl border border-orange-100 p-3 md:p-4 shadow-lg">
               <div className="flex items-center justify-between mb-2">
                 <div className="p-1.5 md:p-2 bg-orange-100 rounded-lg">
-                  <BarChart className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
+                  <DollarSign className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
                 </div>
-                <span className="text-lg md:text-2xl font-bold text-gray-900">₹{sellerStats.averagePrice.toLocaleString()}</span>
+                <span className="text-lg md:text-2xl font-bold text-gray-900">₹{sellerStats.totalRevenue.toLocaleString()}</span>
               </div>
-              <h3 className="text-xs md:text-sm font-medium text-gray-700">Avg Price</h3>
+              <h3 className="text-xs md:text-sm font-medium text-gray-700">Total Revenue</h3>
             </div>
           </div>
+
+          {/* Recent Sales Section */}
+          {recentSales.length > 0 && (
+            <div className="bg-white rounded-xl md:rounded-2xl border border-gray-200 p-4 md:p-5 shadow-lg mb-4 md:mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-900 text-base md:text-lg flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-blue-600" />
+                  Recent Sales
+                </h3>
+                <button
+                  onClick={() => navigate('/sales')}
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  View All →
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Customer</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Product</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Qty</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Amount</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Payment</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {recentSales.map((sale, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">
+                          <div className="font-medium">{sale.customerName}</div>
+                          <div className="text-xs text-gray-500">{sale.customerPhone}</div>
+                        </td>
+                        <td className="px-3 py-2 font-medium truncate max-w-[150px]">{sale.productName}</td>
+                        <td className="px-3 py-2">{sale.quantity}</td>
+                        <td className="px-3 py-2 font-bold">₹{sale.totalAmount?.toLocaleString()}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-2 py-1 rounded text-xs ${sale.paymentMethod === 'cash' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {sale.paymentMethod}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-600">
+                          {sale.createdAt?.toDate ? new Date(sale.createdAt.toDate()).toLocaleDateString() : 'N/A'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Search and Filters */}
           <div className="bg-white rounded-xl md:rounded-2xl border border-gray-200 p-4 md:p-5 shadow-lg">
@@ -673,7 +934,6 @@ const SellerProducts = React.memo(() => {
           </div>
         </div>
 
-        {/* Success Message */}
         {message && message.startsWith('✅') && (
           <div className="mb-6 bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 p-4 rounded-r-xl animate-slide-down">
             <div className="flex items-center gap-3">
@@ -709,6 +969,12 @@ const SellerProducts = React.memo(() => {
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-orange-600 flex-shrink-0" />
               <span className="text-orange-700 font-medium">{updateError}</span>
+              <button
+                onClick={() => setUpdateError(null)}
+                className="ml-auto text-orange-600 hover:text-orange-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}
@@ -765,6 +1031,7 @@ const SellerProducts = React.memo(() => {
                   product={product}
                   index={i}
                   onViewDetails={handleViewDetails}
+                  onSellProduct={handleOpenPurchaseModal} // Pass sell function
                 />
               ))}
             </div>
@@ -778,6 +1045,19 @@ const SellerProducts = React.memo(() => {
             onUpdateDetails={handleUpdateProductDetails}
             isUpdatingDetails={isUpdatingDetails}
             addNewProductToList={addNewProductToList}
+            onSellProduct={handleOpenPurchaseModal} // Pass sell function
+          />
+        )}
+
+        {/* Purchase Modal */}
+        {showPurchaseModal && (
+          <PurchaseModal
+            purchaseData={purchaseData}
+            setPurchaseData={setPurchaseData}
+            onClose={() => setShowPurchaseModal(false)}
+            onCompletePurchase={handleCompletePurchase}
+            isUpdating={isUpdatingDetails}
+            updateError={updateError}
           />
         )}
       </div>
@@ -785,7 +1065,7 @@ const SellerProducts = React.memo(() => {
   );
 });
 
-const ProductCard = React.memo(({ product, index, onViewDetails }) => {
+const ProductCard = React.memo(({ product, index, onViewDetails, onSellProduct }) => {
   const productName = product.name || product.brand || 'Generic Product';
   const displaySku = product.basesku || product.sku || 'N/A';
 
@@ -940,15 +1220,27 @@ const ProductCard = React.memo(({ product, index, onViewDetails }) => {
         </div>
 
         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-          <button
-            className="px-4 py-2 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-1.5"
-            onClick={(e) => {
-              e.stopPropagation();
-              onViewDetails(product);
-            }}
-          >
-            <Eye className="w-4 h-4" /> View
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="px-3 py-2 bg-blue-100 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-200 transition-colors flex items-center gap-1.5"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetails(product);
+              }}
+            >
+              <Eye className="w-4 h-4" /> View
+            </button>
+            <button
+              className="px-3 py-2 bg-green-100 text-green-700 text-sm font-medium rounded-lg hover:bg-green-200 transition-colors flex items-center gap-1.5"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSellProduct(product);
+              }}
+              disabled={stock === 0}
+            >
+              <ShoppingCart className="w-4 h-4" /> Sell
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             {productColor !== 'N/A' && (
               <div className="flex items-center gap-1 text-xs text-gray-500">
@@ -986,7 +1278,8 @@ const ProductDetailsModal = React.memo(({
   onClose,
   onUpdateDetails,
   isUpdatingDetails,
-  addNewProductToList
+  addNewProductToList,
+  onSellProduct // NEW: Add sell function prop
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState(product);
@@ -1073,7 +1366,7 @@ const ProductDetailsModal = React.memo(({
   // --- MODIFIED PRICE LOGIC START: Apply variant price logic to modal display ---
   let modalPrice = Number(displayData.price) || 0;
   let modalOfferPrice = Number(displayData.offerPrice) || 0;
-  const variants = product.variants || []; // Use product.variants for consistency
+  const variants = product.variants || [];
 
   // If main price is 0, check the first variant for price
   if (modalPrice === 0 && variants.length > 0) {
@@ -1106,7 +1399,6 @@ const ProductDetailsModal = React.memo(({
   const imageUrl = displayData.mainImageUrl || displayData.image || displayData.images?.[0]?.url || null;
   const sellerId = displayData.sellerId || displayData.sellerID || displayData.sellerid || 'N/A';
   const productColor = displayData.color || 'N/A';
-
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 md:p-4 overflow-y-auto" onClick={handleBackdropClick}>
@@ -1595,54 +1887,266 @@ const ProductDetailsModal = React.memo(({
 
         {/* Modal Footer */}
         <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 md:p-5">
+          {isEditMode ? (
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={handleSave}
+                disabled={isDisabled}
+              >
+                {isUpdatingDetails ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+              <button
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={() => { setIsEditMode(false); setFormData(product); }}
+                disabled={isDisabled}
+              >
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                className="flex-1 px-4 py-2.5 bg-green-100 text-green-700 font-medium rounded-lg hover:bg-green-200 transition-colors flex items-center justify-center gap-2"
+                onClick={() => onSellProduct(product)}
+                disabled={isDisabled || totalStock === 0}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                Sell Product
+              </button>
+              <button
+                className="flex-1 px-4 py-2.5 bg-blue-100 text-blue-700 font-medium rounded-lg hover:bg-blue-200 transition-colors flex items-center justify-center gap-2"
+                onClick={() => setIsEditMode(true)}
+                disabled={isDisabled}
+              >
+                <Edit className="w-4 h-4" />
+                Edit Product
+              </button>
+              <button
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                onClick={onClose}
+                disabled={isDisabled}
+              >
+                Close
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// NEW: Purchase Modal Component
+const PurchaseModal = React.memo(({ purchaseData, setPurchaseData, onClose, onCompletePurchase, isUpdating, updateError }) => {
+  const handleBackdropClick = useCallback((e) => {
+    if (e.target === e.currentTarget && !isUpdating) onClose();
+  }, [onClose, isUpdating]);
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && !isUpdating) onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose, isUpdating]);
+
+  const handleInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setPurchaseData(prev => ({ ...prev, [name]: value }));
+  }, [setPurchaseData]);
+
+  const totalAmount = (purchaseData.unitPrice || 0) * purchaseData.quantity;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 md:p-4 overflow-y-auto" onClick={handleBackdropClick}>
+      <div className="bg-white rounded-xl md:rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-modal-in">
+        {/* Modal Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 md:p-5 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-green-500 to-green-600 rounded-lg">
+                <ShoppingCart className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="font-bold text-gray-900 text-lg">Record Sale</h2>
+                <p className="text-sm text-gray-600">Sell product to customer</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              disabled={isUpdating}
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Content */}
+        <div className="p-4 md:p-5 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {updateError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600" />
+                <span className="text-red-700 text-sm">{updateError}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {/* Product Info */}
+            <div className="bg-gray-50 rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-medium text-gray-900">{purchaseData.productName}</h3>
+                <span className="font-bold text-lg">₹{purchaseData.unitPrice?.toLocaleString()}</span>
+              </div>
+              <div className="text-sm text-gray-600">
+                Unit Price: ₹{purchaseData.unitPrice?.toLocaleString()}
+              </div>
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Quantity <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="quantity"
+                min="1"
+                value={purchaseData.quantity}
+                onChange={handleInputChange}
+                disabled={isUpdating}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+              />
+            </div>
+
+            {/* Customer Details */}
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <Users className="w-4 h-4 text-gray-500" />
+                Customer Details
+              </h4>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="customerName"
+                  value={purchaseData.customerName}
+                  onChange={handleInputChange}
+                  disabled={isUpdating}
+                  placeholder="Enter customer name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer Phone (Optional)
+                </label>
+                <input
+                  type="tel"
+                  name="customerPhone"
+                  value={purchaseData.customerPhone}
+                  onChange={handleInputChange}
+                  disabled={isUpdating}
+                  placeholder="Enter phone number"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Payment Method */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-gray-500" />
+                Payment Method
+              </label>
+              <select
+                name="paymentMethod"
+                value={purchaseData.paymentMethod}
+                onChange={handleInputChange}
+                disabled={isUpdating}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+              >
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+              </select>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Notes (Optional)
+              </label>
+              <textarea
+                name="notes"
+                rows="2"
+                value={purchaseData.notes}
+                onChange={handleInputChange}
+                disabled={isUpdating}
+                placeholder="Any additional notes..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm resize-none"
+              />
+            </div>
+
+            {/* Total Amount */}
+            <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-gray-900">Total Amount:</span>
+                <span className="font-bold text-2xl text-green-700">₹{totalAmount.toLocaleString()}</span>
+              </div>
+              <div className="text-sm text-gray-600 mt-1">
+                {purchaseData.quantity} × ₹{purchaseData.unitPrice?.toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 md:p-5">
           <div className="flex flex-col sm:flex-row gap-3">
-            {isEditMode ? (
-              <>
-                <button
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                  onClick={handleSave}
-                  disabled={isDisabled}
-                >
-                  {isUpdatingDetails ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4" />
-                      Save Changes
-                    </>
-                  )}
-                </button>
-                <button
-                  className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                  onClick={() => { setIsEditMode(false); setFormData(product); }}
-                  disabled={isDisabled}
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all flex items-center justify-center gap-2"
-                  onClick={() => setIsEditMode(true)}
-                  disabled={isDisabled}
-                >
-                  <Edit className="w-4 h-4" />
-                  Edit Product
-                </button>
-                <button
-                  className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
-                  onClick={onClose}
-                  disabled={isDisabled}
-                >
-                  Close
-                </button>
-              </>
-            )}
+            <button
+              className="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              onClick={onCompletePurchase}
+              disabled={isUpdating || !purchaseData.customerName.trim() || purchaseData.quantity <= 0}
+            >
+              {isUpdating ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Complete Sale
+                </>
+              )}
+            </button>
+            <button
+              className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+              onClick={onClose}
+              disabled={isUpdating}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       </div>

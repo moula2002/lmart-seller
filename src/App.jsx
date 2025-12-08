@@ -30,7 +30,7 @@ const App = () => {
 
           {/* Product Management Routes */}
           <Route path="/seller/products" element={<SellerProducts />} />
-          <Route path="/add-products" element={<AddProduct />} /> {/* <--- NEW ROUTE ADDED */}
+          <Route path="/add-products" element={<AddProduct />} /> 
           
           {/* Seller Onboarding/Auth Routes */}
           <Route path="/seller/register" element={<SellerRegister />} />
