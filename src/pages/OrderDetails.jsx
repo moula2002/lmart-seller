@@ -80,13 +80,11 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
     }, { total: 0, pending: 0, processing: 0, delivered: 0 })
   }, [orders])
 
-  // Extract seller ID from product items
   const getSellerIdFromProduct = (product) => {
-    // Check common field names for seller ID in product
     return (
-      product.sellerId || 
-      product.sellerID || 
-      product.sellerid || 
+      product.sellerId ||
+      product.sellerID ||
+      product.sellerid ||
       product.seller
     )
   }
@@ -94,24 +92,24 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
   // Normalize order to only show products from specific seller
   const normalizeOrderForSeller = (order, targetSellerId) => {
     if (!order || !targetSellerId) return null
-    
+
     // Check for items/products in different possible field names
     const allItems = order.items || order.products || order.orderItems || []
-    
+
     // Filter items that belong to the target seller
     const sellerItems = allItems.filter(item => {
       const itemSellerId = getSellerIdFromProduct(item)
       return itemSellerId && String(itemSellerId) === String(targetSellerId)
     })
-    
+
     if (sellerItems.length === 0) return null
-    
+
     // Calculate total for these items
     const totalForSeller = sumProductTotal(sellerItems)
-    
+
     // Merge customer info from different possible locations
     const customerInfo = order.customerInfo || order.customer || {}
-    
+
     return {
       ...order,
       id: order.id || order.orderId || `ORD-${Date.now()}`,
@@ -137,7 +135,7 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
     try {
       // Use prop sellerId or current logged-in user's ID
       const targetSellerId = sellerId || currentUserUid
-      
+
       if (!targetSellerId) {
         setMessage('Please log in or provide a seller ID.')
         setIsLoading(false)
@@ -172,40 +170,23 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
         }
       }
 
-      // ---- Fetch all orders from collectionGroup ----
       let allOrders = []
-      
+
       try {
-        // Fetch from collectionGroup (this queries across all 'orders' subcollections)
         const ordersQuery = collectionGroup(db, 'orders')
         const ordersSnapshot = await getDocs(ordersQuery)
-        
+
         allOrders = ordersSnapshot.docs.map(doc => ({
           id: doc.id,
           __path: doc.ref.path,
           ...doc.data()
         }))
-        
+
       } catch (err) {
         console.error('Error fetching orders:', err)
         // Fallback: try to fetch from a specific path
         if (currentUserUid) {
           try {
-            // NOTE: The original code used a non-existent 'collection' import here.
-            // Assuming it should use a correctly imported Firestore function for a fallback collection path if needed, 
-            // but keeping the original structure as requested not to change other logic.
-            // For production, you'd need 'import { collection } from 'firebase/firestore''
-            // For now, removing the fallback block to avoid errors/confusion based on the prompt's constraint:
-            /*
-            const userOrdersRef = collection(db, 'users', currentUserUid, 'orders')
-            const userOrdersSnap = await getDocs(userOrdersRef)
-            allOrders = userOrdersSnap.docs.map(doc => ({
-              id: doc.id,
-              __path: doc.ref.path,
-              ...doc.data()
-            }))
-            */
-            // Adding a simple error message to reflect the fetch failure:
             setMessage('Error fetching orders using collectionGroup. Check Firestore rules/index.')
           } catch (fallbackErr) {
             console.error('Fallback fetch also failed:', fallbackErr)
@@ -220,21 +201,21 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
 
       // Sort by date (newest first)
       sellerOrders.sort((a, b) => {
-        const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 
-                     (a.createdAt ? new Date(a.createdAt).getTime() : 0)
-        const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 
-                     (b.createdAt ? new Date(b.createdAt).getTime() : 0)
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() :
+          (a.createdAt ? new Date(a.createdAt).getTime() : 0)
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() :
+          (b.createdAt ? new Date(b.createdAt).getTime() : 0)
         return tb - ta
       })
 
       setOrders(sellerOrders)
-      
+
       if (sellerOrders.length === 0) {
         setMessage(`No orders found with products from seller ID: ${targetSellerId}`)
       } else {
         setMessage(`Found ${sellerOrders.length} order(s) with your products`)
       }
-      
+
     } catch (err) {
       console.error('Error in fetchOrders:', err)
       setMessage('Error loading orders. Please try again.')
@@ -250,34 +231,34 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
         const parts = orderObj.__path.split('/')
         if (parts.length >= 4) {
           const orderRef = doc(db, parts[0], parts[1], parts[2], parts[3])
-          await updateDoc(orderRef, { 
+          await updateDoc(orderRef, {
             status: newStatus,
             orderStatus: newStatus,
             deliveryStatus: newStatus,
-            updatedAt: new Date() 
+            updatedAt: new Date()
           })
         } else {
-          await updateDoc(doc(db, 'orders', orderId), { 
+          await updateDoc(doc(db, 'orders', orderId), {
             status: newStatus,
-            updatedAt: new Date() 
+            updatedAt: new Date()
           })
         }
       } else {
-        await updateDoc(doc(db, 'orders', orderId), { 
+        await updateDoc(doc(db, 'orders', orderId), {
           status: newStatus,
-          updatedAt: new Date() 
+          updatedAt: new Date()
         })
       }
 
       // Update local state
-      setOrders(prev => prev.map(o => 
+      setOrders(prev => prev.map(o =>
         o.id === orderId ? ({ ...o, status: newStatus }) : o
       ))
-      
+
       if (selectedOrder && selectedOrder.id === orderId) {
         setSelectedOrder(prev => ({ ...prev, status: newStatus }))
       }
-      
+
       setMessage('Order status updated successfully!')
     } catch (err) {
       console.error('Error updating order status:', err)
@@ -428,10 +409,6 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
               <h3 className="font-semibold mb-3 text-lg text-purple-700">Customer Details</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <p className="text-slate-700"><strong className="text-slate-900 block">Name:</strong> {order.customer?.name}</p>
-                {/* Removed lines for Email and Phone as requested:
-                  <p className="text-slate-700"><strong className="text-slate-900 block">Email:</strong> {order.customer?.email}</p>
-                  <p className="text-slate-700"><strong className="text-slate-900 block">Phone:</strong> {order.customer?.phone}</p> 
-                */}
                 <p className="text-slate-700"><strong className="text-slate-900 block">Payment:</strong> {order.paymentMethod}</p>
               </div>
             </div>
@@ -496,11 +473,10 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
                 <button
                   onClick={handleUpdate}
                   disabled={statusToUpdate === (order.status || order.orderStatus) || isUpdating}
-                  className={`px-4 py-2 rounded-lg text-white font-medium flex items-center gap-2 ${
-                    statusToUpdate === (order.status || order.orderStatus) || isUpdating
+                  className={`px-4 py-2 rounded-lg text-white font-medium flex items-center gap-2 ${statusToUpdate === (order.status || order.orderStatus) || isUpdating
                       ? 'bg-purple-300 cursor-not-allowed'
                       : 'bg-gradient-to-r from-purple-600 to-purple-800 hover:opacity-95'
-                  }`}
+                    }`}
                 >
                   {isUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
                   {isUpdating ? 'Updating...' : 'Save Update'}
@@ -528,11 +504,10 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
 
       {message && (
         <div
-          className={`mb-6 p-4 rounded-xl border ${
-            message.includes('Error')
+          className={`mb-6 p-4 rounded-xl border ${message.includes('Error')
               ? 'bg-rose-50 text-rose-700 border-rose-200'
               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          }`}
+            }`}
         >
           {message}
         </div>
@@ -584,11 +559,10 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
                         {suggestions.map((s, i) => (
                           <div
                             key={i}
-                            className={`px-3 py-2 cursor-pointer text-sm ${
-                              i === selectedSuggestionIndex
+                            className={`px-3 py-2 cursor-pointer text-sm ${i === selectedSuggestionIndex
                                 ? 'bg-purple-100 text-purple-900'
                                 : 'text-slate-700 hover:bg-purple-50'
-                            }`}
+                              }`}
                             onClick={() => handleSuggestionClick(s)}
                             onMouseEnter={() => setSelectedSuggestionIndex(i)}
                           >
@@ -616,7 +590,7 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
                   </div>
                 </div>
 
-                <button 
+                <button
                   className="flex items-center text-purple-700 bg-purple-50 border border-purple-200 px-4 py-2 rounded-lg hover:bg-purple-100"
                   onClick={fetchOrders}
                 >

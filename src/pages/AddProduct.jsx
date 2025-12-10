@@ -19,7 +19,6 @@ import {
   FiVideo,
 } from 'react-icons/fi';
 
-// Assuming you have imported and configured your Firebase app instance:
 import { db, storage, auth } from "../config/firebase";
 import {
   collection,
@@ -141,14 +140,11 @@ const AddProduct = () => {
           if (sellerSnap.exists()) {
             const sellerData = { id: sellerSnap.id, ...sellerSnap.data() };
             setCurrentSeller(sellerData);
-
-            // Set seller ID in all possible fields for compatibility
             setProductData(prev => ({
               ...prev,
               sellerId: sellerData.sellerId || sellerData.id || user.uid,
             }));
           } else {
-            // If seller doc doesn't exist, use auth UID
             setCurrentSeller({ id: user.uid });
             setProductData(prev => ({
               ...prev,
@@ -505,8 +501,6 @@ const AddProduct = () => {
           name: selectedSubCategory ? selectedSubCategory.name : 'N/A',
         } : null,
       };
-
-      // Get seller ID from currentSeller
       const sellerId = currentSeller?.sellerId || currentSeller?.id || productData.sellerId;
 
       const productToSave = {
@@ -607,7 +601,6 @@ const AddProduct = () => {
 
           <form onSubmit={handleSubmit} className="p-8 space-y-8">
 
-            {/* BASIC INFORMATION (UPDATED - Seller ID auto-filled) */}
             <div className="space-y-4">
               <h3 className="text-xl font-semibold text-gray-800 flex items-center">
                 <FiPackage className="w-6 h-6 mr-3 text-blue-600" />
@@ -625,7 +618,6 @@ const AddProduct = () => {
                   required
                 />
 
-                {/* Seller ID - Auto-filled and read-only */}
                 <div className="relative">
                   <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
@@ -1139,7 +1131,7 @@ const AddProduct = () => {
               <FiCheck className="w-12 h-12 text-green-500 mx-auto mb-4 bg-green-100 p-2 rounded-full" />
               <h3 className="text-2xl font-bold text-gray-900">Product Added Successfully!</h3>
               <p className="mt-2 text-gray-600">
-                Your product, **{productData.name || 'Untitled Product'}**, has been successfully uploaded and saved to the database.
+                Your product, {productData.name || 'Untitled Product'}, has been successfully uploaded and saved to the database.
               </p>
               <p className="mt-1 text-sm text-gray-500">
                 Product ID: <span className="font-mono bg-gray-100 p-1 rounded text-xs">{newlyAddedProductId}</span>

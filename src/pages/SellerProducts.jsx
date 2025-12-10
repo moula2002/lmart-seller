@@ -1,4 +1,4 @@
-// SellerProducts.jsx
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -18,7 +18,6 @@ import './SellerProducts.css';
 import {
   Search,
   Grid,
-  Tag,
   Plus,
   AlertTriangle,
   RefreshCw,
@@ -29,7 +28,6 @@ import {
   ShoppingBag,
   Package,
   DollarSign,
-  BarChart,
   ChevronRight,
   Filter,
   Layers,
@@ -39,8 +37,6 @@ import {
   AlertCircle,
   Palette,
   ShoppingCart,
-  Users,
-  CreditCard,
   Truck
 } from 'lucide-react';
 
@@ -162,7 +158,7 @@ const SellerProducts = React.memo(() => {
   // Fetch recent sales
   const fetchRecentSales = useCallback(async () => {
     if (!sellerUid) return;
-    
+
     try {
       const salesQuery = query(
         collection(db, 'sales'),
@@ -170,15 +166,14 @@ const SellerProducts = React.memo(() => {
       );
       const salesSnap = await getDocs(salesQuery);
       const salesData = salesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 5); // Get last 5 sales
-      
-      setRecentSales(salesData);
-      
-      // Calculate total sold and revenue
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      setRecentSales(salesData.slice(0, 5)); // Get last 5 sales
+
+      // Calculate total sold and revenue from ALL sales, not just recent ones
       const totalSold = salesData.reduce((sum, sale) => sum + (sale.quantity || 0), 0);
       const totalRevenue = salesData.reduce((sum, sale) => sum + (sale.totalAmount || 0), 0);
-      
+
       setSellerStats(prev => ({
         ...prev,
         totalSold,
@@ -365,7 +360,7 @@ const SellerProducts = React.memo(() => {
 
         setLoading(false);
         setIsInitialLoad(false);
-        setError(null); 
+        setError(null);
         return;
       } catch (fallbackErr) {
         console.error('Fallback fetch failed:', fallbackErr);
@@ -414,7 +409,7 @@ const SellerProducts = React.memo(() => {
   useEffect(() => {
     fetchProducts();
     fetchRecentSales();
-  }, [sellerUid, productIdFromPath]);
+  }, [sellerUid, productIdFromPath, fetchProducts, fetchRecentSales]);
 
   const addNewProductToList = useCallback((newProduct) => {
     if (newProduct) {
@@ -508,7 +503,7 @@ const SellerProducts = React.memo(() => {
       if (variants.length > 0) {
         updatedVariants = variants.map(variant => {
           if (remainingQuantity <= 0) return variant;
-          
+
           const variantStock = Number(variant.stock) || 0;
           if (variantStock > 0) {
             const deductFromVariant = Math.min(remainingQuantity, variantStock);
@@ -568,16 +563,16 @@ const SellerProducts = React.memo(() => {
       await addDoc(collection(db, 'sales'), saleRecord);
 
       // 5. Update local state
-      const updatedProduct = { 
-        ...currentProduct, 
+      const updatedProduct = {
+        ...currentProduct,
         ...payload,
         variants: updatedVariants.length > 0 ? updatedVariants : currentProduct.variants
       };
-      
+
       if (selectedProduct && selectedProduct.id === purchaseData.productId) {
         setSelectedProduct(updatedProduct);
       }
-      
+
       setProducts(prevProducts => {
         const updatedProductsList = prevProducts.map(p =>
           p.id === purchaseData.productId ? updatedProduct : p
@@ -613,13 +608,12 @@ const SellerProducts = React.memo(() => {
     }
   }, [purchaseData, sellerUid, sellerDoc, selectedProduct, products, calculateSellerStats, fetchRecentSales]);
 
-  // NEW: Open purchase modal for a product
   const handleOpenPurchaseModal = useCallback((product) => {
     const productName = product.name || product.brand || 'Product';
     const productPrice = Number(product.price) || 0;
     const productOfferPrice = Number(product.offerPrice) || 0;
     const finalPrice = productOfferPrice > 0 && productOfferPrice < productPrice ? productOfferPrice : productPrice;
-    
+
     setPurchaseData({
       productId: product.id,
       productName: productName,
@@ -713,7 +707,6 @@ const SellerProducts = React.memo(() => {
               </div>
             </div>
 
-            {/* Stats Skeleton */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               {[...Array(4)].map((_, i) => (
                 <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
@@ -790,7 +783,7 @@ const SellerProducts = React.memo(() => {
             </div>
           </div>
 
-          {/* Stats Cards */}
+          {/* Stats Cards - UPDATED with better formatting */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
             <div className="bg-gradient-to-br from-white to-blue-50 rounded-xl md:rounded-2xl border border-blue-100 p-3 md:p-4 shadow-lg">
               <div className="flex items-center justify-between mb-2">
@@ -807,7 +800,7 @@ const SellerProducts = React.memo(() => {
                 <div className="p-1.5 md:p-2 bg-green-100 rounded-lg">
                   <ShoppingBag className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
                 </div>
-                <span className="text-lg md:text-2xl font-bold text-gray-900">{sellerStats.totalStock}</span>
+                <span className="text-lg md:text-2xl font-bold text-gray-900">{sellerStats.totalStock.toLocaleString()}</span>
               </div>
               <h3 className="text-xs md:text-sm font-medium text-gray-700">Total Stock</h3>
             </div>
@@ -815,9 +808,9 @@ const SellerProducts = React.memo(() => {
             <div className="bg-gradient-to-br from-white to-purple-50 rounded-xl md:rounded-2xl border border-purple-100 p-3 md:p-4 shadow-lg">
               <div className="flex items-center justify-between mb-2">
                 <div className="p-1.5 md:p-2 bg-purple-100 rounded-lg">
-                  <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+                  <ShoppingCart className="w-4 h-4 md:w-5 md-h-5 text-purple-600" />
                 </div>
-                <span className="text-lg md:text-2xl font-bold text-gray-900">{sellerStats.totalSold}</span>
+                <span className="text-lg md:text-2xl font-bold text-gray-900">{sellerStats.totalSold.toLocaleString()}</span>
               </div>
               <h3 className="text-xs md:text-sm font-medium text-gray-700">Total Sold</h3>
             </div>
@@ -841,47 +834,6 @@ const SellerProducts = React.memo(() => {
                   <Truck className="w-5 h-5 text-blue-600" />
                   Recent Sales
                 </h3>
-                <button
-                  onClick={() => navigate('/sales')}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                >
-                  View All →
-                </button>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Customer</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Product</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Qty</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Amount</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Payment</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {recentSales.map((sale, index) => (
-                      <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-3 py-2">
-                          <div className="font-medium">{sale.customerName}</div>
-                          <div className="text-xs text-gray-500">{sale.customerPhone}</div>
-                        </td>
-                        <td className="px-3 py-2 font-medium truncate max-w-[150px]">{sale.productName}</td>
-                        <td className="px-3 py-2">{sale.quantity}</td>
-                        <td className="px-3 py-2 font-bold">₹{sale.totalAmount?.toLocaleString()}</td>
-                        <td className="px-3 py-2">
-                          <span className={`px-2 py-1 rounded text-xs ${sale.paymentMethod === 'cash' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                            {sale.paymentMethod}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-xs text-gray-600">
-                          {sale.createdAt?.toDate ? new Date(sale.createdAt.toDate()).toLocaleDateString() : 'N/A'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </div>
           )}
@@ -1031,7 +983,7 @@ const SellerProducts = React.memo(() => {
                   product={product}
                   index={i}
                   onViewDetails={handleViewDetails}
-                  onSellProduct={handleOpenPurchaseModal} // Pass sell function
+                  onSellProduct={handleOpenPurchaseModal}
                 />
               ))}
             </div>
@@ -1045,7 +997,7 @@ const SellerProducts = React.memo(() => {
             onUpdateDetails={handleUpdateProductDetails}
             isUpdatingDetails={isUpdatingDetails}
             addNewProductToList={addNewProductToList}
-            onSellProduct={handleOpenPurchaseModal} // Pass sell function
+            onSellProduct={handleOpenPurchaseModal} 
           />
         )}
 
@@ -1163,7 +1115,7 @@ const ProductCard = React.memo(({ product, index, onViewDetails, onSellProduct }
         {/* Stock Badge - More prominent */}
         <div className="absolute top-2 right-2">
           <div className={`px-3 py-1.5 text-sm font-medium rounded-lg ${stockClass} shadow-sm`}>
-            <span className="font-bold">{stock}</span> in stock
+            <span className="font-bold">{stock.toLocaleString()}</span> in stock
           </div>
         </div>
       </div>
@@ -1230,16 +1182,6 @@ const ProductCard = React.memo(({ product, index, onViewDetails, onSellProduct }
             >
               <Eye className="w-4 h-4" /> View
             </button>
-            <button
-              className="px-3 py-2 bg-green-100 text-green-700 text-sm font-medium rounded-lg hover:bg-green-200 transition-colors flex items-center gap-1.5"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSellProduct(product);
-              }}
-              disabled={stock === 0}
-            >
-              <ShoppingCart className="w-4 h-4" /> Sell
-            </button>
           </div>
           <div className="flex items-center gap-2">
             {productColor !== 'N/A' && (
@@ -1278,7 +1220,6 @@ const ProductDetailsModal = React.memo(({
   onClose,
   onUpdateDetails,
   isUpdatingDetails,
-  addNewProductToList,
   onSellProduct // NEW: Add sell function prop
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
@@ -1417,7 +1358,7 @@ const ProductDetailsModal = React.memo(({
                     SKU: {displaySku.length > 20 ? `${displaySku.substring(0, 20)}...` : displaySku}
                   </code>
                   <div className={`px-2 py-0.5 text-xs font-medium rounded-lg ${stockClass}`}>
-                    <span className="font-bold">{totalStock}</span> in stock
+                    <span className="font-bold">{totalStock.toLocaleString()}</span> in stock
                   </div>
                   {isEditMode && (
                     <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Editing</span>
@@ -1488,7 +1429,7 @@ const ProductDetailsModal = React.memo(({
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-gray-700">Total Stock:</span>
                       <div className={`px-3 py-1.5 text-sm font-medium rounded-lg ${stockClass}`}>
-                        <span className="font-bold">{totalStock}</span> units
+                        <span className="font-bold">{totalStock.toLocaleString()}</span> units
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -1664,7 +1605,7 @@ const ProductDetailsModal = React.memo(({
                     ) : (
                       <div className="px-3 py-2 bg-gray-50 rounded-lg">
                         <span className={`text-sm font-medium ${stockClass.includes('green') ? 'text-green-700' : stockClass.includes('yellow') ? 'text-yellow-700' : 'text-red-700'}`}>
-                          {product.stockQuantity || product.stock || 0}
+                          {(product.stockQuantity || product.stock || 0).toLocaleString()}
                         </span>
                       </div>
                     )}
@@ -1768,7 +1709,7 @@ const ProductDetailsModal = React.memo(({
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-semibold text-gray-900 text-base">Product Variants ({variants.length})</h3>
                   <div className={`px-3 py-1.5 text-sm font-medium rounded-lg ${stockClass}`}>
-                    Total: <span className="font-bold">{totalStock}</span> units
+                    Total: <span className="font-bold">{totalStock.toLocaleString()}</span> units
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -1825,7 +1766,7 @@ const ProductDetailsModal = React.memo(({
                             </td>
                             <td className="px-3 py-2">
                               <span className={`px-2 py-1 rounded text-xs font-medium ${variantStockClass}`}>
-                                {variantStock} units
+                                {variantStock.toLocaleString()} units
                               </span>
                             </td>
                           </tr>
@@ -1918,14 +1859,6 @@ const ProductDetailsModal = React.memo(({
           ) : (
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                className="flex-1 px-4 py-2.5 bg-green-100 text-green-700 font-medium rounded-lg hover:bg-green-200 transition-colors flex items-center justify-center gap-2"
-                onClick={() => onSellProduct(product)}
-                disabled={isDisabled || totalStock === 0}
-              >
-                <ShoppingCart className="w-4 h-4" />
-                Sell Product
-              </button>
-              <button
                 className="flex-1 px-4 py-2.5 bg-blue-100 text-blue-700 font-medium rounded-lg hover:bg-blue-200 transition-colors flex items-center justify-center gap-2"
                 onClick={() => setIsEditMode(true)}
                 disabled={isDisabled}
@@ -1942,212 +1875,6 @@ const ProductDetailsModal = React.memo(({
               </button>
             </div>
           )}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// NEW: Purchase Modal Component
-const PurchaseModal = React.memo(({ purchaseData, setPurchaseData, onClose, onCompletePurchase, isUpdating, updateError }) => {
-  const handleBackdropClick = useCallback((e) => {
-    if (e.target === e.currentTarget && !isUpdating) onClose();
-  }, [onClose, isUpdating]);
-
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape' && !isUpdating) onClose();
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [onClose, isUpdating]);
-
-  const handleInputChange = useCallback((e) => {
-    const { name, value } = e.target;
-    setPurchaseData(prev => ({ ...prev, [name]: value }));
-  }, [setPurchaseData]);
-
-  const totalAmount = (purchaseData.unitPrice || 0) * purchaseData.quantity;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-2 md:p-4 overflow-y-auto" onClick={handleBackdropClick}>
-      <div className="bg-white rounded-xl md:rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-modal-in">
-        {/* Modal Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-4 md:p-5 z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-green-500 to-green-600 rounded-lg">
-                <ShoppingCart className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="font-bold text-gray-900 text-lg">Record Sale</h2>
-                <p className="text-sm text-gray-600">Sell product to customer</p>
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              disabled={isUpdating}
-            >
-              <X className="w-5 h-5 text-gray-500" />
-            </button>
-          </div>
-        </div>
-
-        {/* Modal Content */}
-        <div className="p-4 md:p-5 overflow-y-auto max-h-[calc(90vh-120px)]">
-          {updateError && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-red-600" />
-                <span className="text-red-700 text-sm">{updateError}</span>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {/* Product Info */}
-            <div className="bg-gray-50 rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium text-gray-900">{purchaseData.productName}</h3>
-                <span className="font-bold text-lg">₹{purchaseData.unitPrice?.toLocaleString()}</span>
-              </div>
-              <div className="text-sm text-gray-600">
-                Unit Price: ₹{purchaseData.unitPrice?.toLocaleString()}
-              </div>
-            </div>
-
-            {/* Quantity */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                name="quantity"
-                min="1"
-                value={purchaseData.quantity}
-                onChange={handleInputChange}
-                disabled={isUpdating}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-              />
-            </div>
-
-            {/* Customer Details */}
-            <div className="space-y-3">
-              <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                <Users className="w-4 h-4 text-gray-500" />
-                Customer Details
-              </h4>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="customerName"
-                  value={purchaseData.customerName}
-                  onChange={handleInputChange}
-                  disabled={isUpdating}
-                  placeholder="Enter customer name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer Phone (Optional)
-                </label>
-                <input
-                  type="tel"
-                  name="customerPhone"
-                  value={purchaseData.customerPhone}
-                  onChange={handleInputChange}
-                  disabled={isUpdating}
-                  placeholder="Enter phone number"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-gray-500" />
-                Payment Method
-              </label>
-              <select
-                name="paymentMethod"
-                value={purchaseData.paymentMethod}
-                onChange={handleInputChange}
-                disabled={isUpdating}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-              >
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="upi">UPI</option>
-                <option value="bank_transfer">Bank Transfer</option>
-              </select>
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes (Optional)
-              </label>
-              <textarea
-                name="notes"
-                rows="2"
-                value={purchaseData.notes}
-                onChange={handleInputChange}
-                disabled={isUpdating}
-                placeholder="Any additional notes..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm resize-none"
-              />
-            </div>
-
-            {/* Total Amount */}
-            <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-900">Total Amount:</span>
-                <span className="font-bold text-2xl text-green-700">₹{totalAmount.toLocaleString()}</span>
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                {purchaseData.quantity} × ₹{purchaseData.unitPrice?.toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Modal Footer */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 md:p-5">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              className="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              onClick={onCompletePurchase}
-              disabled={isUpdating || !purchaseData.customerName.trim() || purchaseData.quantity <= 0}
-            >
-              {isUpdating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-4 h-4" />
-                  Complete Sale
-                </>
-              )}
-            </button>
-            <button
-              className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
-              onClick={onClose}
-              disabled={isUpdating}
-            >
-              Cancel
-            </button>
-          </div>
         </div>
       </div>
     </div>
