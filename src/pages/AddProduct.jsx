@@ -665,7 +665,7 @@ const AddProduct = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 {/* 1. Main Image Control or Preview */}
-                <div className="h-64">
+                <div className="h-30">
                   {!mainImageFile ? (
                     <div className="h-full border-2 border-dashed border-pink-300 rounded-xl p-4 text-center hover:border-pink-500 transition-colors duration-200 bg-white flex flex-col justify-center">
                       <FiUpload className="w-6 h-6 text-pink-400 mx-auto mb-2" />
@@ -724,7 +724,7 @@ const AddProduct = () => {
                 </div>
 
                 {/* 2. Video Upload Control or Preview */}
-                <div className="h-64">
+                <div className="h-30">
                   {!videoFile ? (
                     <div className="h-full border-2 border-dashed border-violet-300 rounded-xl p-4 text-center hover:border-violet-500 transition-colors duration-200 bg-white flex flex-col justify-center">
                       <FiVideo className="w-6 h-6 text-violet-400 mx-auto mb-2" />
