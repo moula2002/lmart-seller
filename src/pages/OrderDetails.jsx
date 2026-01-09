@@ -355,8 +355,6 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
   const getStatusColor = (status) => {
     const stat = (status || '').toLowerCase()
     switch (stat) {
-      case 'delivered': return 'bg-green-50 text-green-700 border border-green-200'
-      case 'shipped': return 'bg-indigo-50 text-indigo-700 border border-indigo-200'
       case 'processing': return 'bg-amber-50 text-amber-700 border border-amber-200'
       case 'pending': return 'bg-gray-50 text-gray-700 border border-gray-200'
       case 'cancelled': return 'bg-rose-50 text-rose-700 border-rose-200'
@@ -367,8 +365,6 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
   const getStatusIcon = (status) => {
     const stat = (status || '').toLowerCase()
     switch (stat) {
-      case 'delivered': return <CheckCircle className="w-4 h-4 text-green-600" />
-      case 'shipped': return <Truck className="w-4 h-4 text-indigo-600" />
       case 'processing': return <Package className="w-4 h-4 text-amber-600" />
       case 'pending': return <Clock className="w-4 h-4 text-gray-600" />
       default: return <Clock className="w-4 h-4 text-gray-600" />
@@ -466,8 +462,6 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
                 >
                   <option value="pending">Pending</option>
                   <option value="processing">Processing</option>
-                  <option value="shipped">Shipped</option>
-                  <option value="delivered">Delivered</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
                 <button
@@ -583,8 +577,6 @@ const OrderDetails = ({ sellerId = null, orderPath = null }) => {
                       <option value="all">All Status</option>
                       <option value="pending">Pending</option>
                       <option value="processing">Processing</option>
-                      <option value="shipped">Shipped</option>
-                      <option value="delivered">Delivered</option>
                       <option value="cancelled">Cancelled</option>
                     </select>
                   </div>

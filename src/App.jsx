@@ -13,7 +13,8 @@ import SellerDocuments from './pages/SellerDocuments'
 import SellerPendingApproval from './pages/SellerPendingApproval'
 
 import { SellerProvider } from './context/SellerContext'
-// NOTE: Assuming pages are correctly defined in ./pages/...
+import EditProduct from './pages/EditProduct'
+
 
 const App = () => {
 
@@ -31,6 +32,7 @@ const App = () => {
           {/* Product Management Routes */}
           <Route path="/seller/products" element={<SellerProducts />} />
           <Route path="/add-products" element={<AddProduct />} /> 
+          <Route path="/products/edit/:productId" element={<EditProduct />} />
           
           {/* Seller Onboarding/Auth Routes */}
           <Route path="/seller/register" element={<SellerRegister />} />

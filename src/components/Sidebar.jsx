@@ -20,6 +20,7 @@ const Sidebar = ({ user, onLogout }) => {
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/documentation', icon: FileText, label: 'Seller Documentation' },
     { path: '/products', icon: Package, label: 'My Products' },
+    { path: '/edit-products', icon: Package, label: 'Edit Products' },
     { path: '/orders', icon: ShoppingCart, label: 'Order Details' },
     { path: '/add-product', icon: Plus, label: 'Add Product' },
     { path: '/automation', icon: Bot, label: 'Python Automation' },

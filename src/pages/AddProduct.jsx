@@ -14,17 +14,20 @@ import {
   FiChevronDown,
   FiFileText,
   FiUpload,
-  FiUser,
+  FiUser, 
   FiZap,
-  FiVideo,
+  FiVideo, 
 } from 'react-icons/fi';
 
+// Assuming you have imported and configured your Firebase app instance:
 import { db, storage, auth } from "../config/firebase";
 import {
   collection,
   addDoc,
   getDocs,
   doc,
+  updateDoc,
+  serverTimestamp,
   getDoc,
 } from "firebase/firestore";
 import {
@@ -34,16 +37,34 @@ import {
 } from "firebase/storage";
 import { onAuthStateChanged } from "firebase/auth";
 
-// *** REUSABLE KEYWORD GENERATION FUNCTION *** (UNMODIFIED)
+const normalizeImages = (imageUrls, mainImageUrl) => {
+  if (Array.isArray(imageUrls) && imageUrls.length > 0) {
+    return imageUrls;
+  }
+
+  if (mainImageUrl) {
+    return [{
+      url: mainImageUrl,
+      isMain: true,
+      color: "",
+      name: "main-image",
+      path: "",
+      isExisting: true,
+    }];
+  }
+
+  return [];
+};
+
 const generateSearchKeywords = (product) => {
   const keywords = new Set();
   const lowerName = product.name.toLowerCase();
-
+  
   // 1. Full/Partial Name
   for (let i = 1; i <= lowerName.length; i++) {
     keywords.add(lowerName.substring(0, i));
   }
-
+  
   // 2. Split Name/Description by space (for word-level search)
   const nameWords = lowerName.split(/\s+/).filter(word => word.length > 1);
   nameWords.forEach(word => {
@@ -69,30 +90,30 @@ const generateSearchKeywords = (product) => {
   // 3. Add variant colors/sizes
   const uniqueColors = new Set(product.variants.map(v => v.color).filter(Boolean));
   const uniqueSizes = new Set(product.variants.map(v => v.size).filter(Boolean));
-
+  
   uniqueColors.forEach(color => keywords.add(color.toLowerCase()));
   uniqueSizes.forEach(size => keywords.add(size.toLowerCase()));
-
+  
   // 4. Add new productTag (your new field)
   if (product.productTag) keywords.add(product.productTag.toLowerCase());
 
   return Array.from(keywords).filter(k => k.length > 0 && k.length <= 50);
 };
 
-// List of available product tags/labels
 const PRODUCT_TAG_OPTIONS = [
-  { value: '', label: 'Select Product Label' },
-  { value: 'E-Store', label: 'E-Store' },
+  { value: 'E-Store', label: 'E-Store' }, 
   { value: 'Local Market', label: 'Local Market' },
   { value: 'Printing', label: 'Printing' },
-  { value: 'Oldee', label: 'Oldee' },
 ];
 
 const AddProduct = () => {
   // --- STATE FOR FETCHED DATA ---
   const [categoriesList, setCategoriesList] = useState([]);
   const [subcategoriesList, setSubcategoriesList] = useState([]);
-  const [currentSeller, setCurrentSeller] = useState(null);
+  
+  // --- USER STATE ---
+  const [currentUser, setCurrentUser] = useState(null);
+  const [sellerData, setSellerData] = useState(null);
 
   // --- FORM DATA STATE ---
   const [productData, setProductData] = useState({
@@ -101,14 +122,16 @@ const AddProduct = () => {
     sku: '',
     hsnCode: '',
     brand: '',
-    category: '',
-    subCategory: '',
+    category: '', 
+    subCategory: '', 
     sellerId: '',
-    productTag: '',
-    variants: [],
+    sellerName: '',
+    sellerEmail: '',
+    productTag: '', 
+    variants: [], 
   });
 
-  // --- VARIANT MANAGEMENT STATE (UNMODIFIED) ---
+  // --- VARIANT MANAGEMENT STATE ---
   const [newVariant, setNewVariant] = useState({
     color: '',
     size: '',
@@ -118,60 +141,68 @@ const AddProduct = () => {
   });
 
   // --- IMAGE & VIDEO MANAGEMENT STATE ---
-  const [mainImageFile, setMainImageFile] = useState(null);
-  const [galleryFiles, setGalleryFiles] = useState([]);
-  const [videoFile, setVideoFile] = useState(null);
+  const [mainImageFile, setMainImageFile] = useState(null); 
+  const [galleryFiles, setGalleryFiles] = useState([]); 
+  const [videoFile, setVideoFile] = useState(null); 
 
   // --- OTHER UTILITY STATES ---
-  const [loading, setLoading] = useState(false);
-  const [loadingData, setLoadingData] = useState(false);
+  const [loading, setLoading] = useState(false); 
+  const [loadingData, setLoadingData] = useState(false); 
   const [message, setMessage] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [newlyAddedProductId, setNewlyAddedProductId] = useState('');
 
+  // --- FETCH CURRENT USER AND SELLER DATA ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        setCurrentUser(user);
+        
         try {
-          // Get seller document from Firestore
-          const sellerRef = doc(db, 'sellers', user.uid);
-          const sellerSnap = await getDoc(sellerRef);
-
-          if (sellerSnap.exists()) {
-            const sellerData = { id: sellerSnap.id, ...sellerSnap.data() };
-            setCurrentSeller(sellerData);
+          // Fetch seller data from Firestore based on user's email
+          const sellerQuery = await getDocs(collection(db, "sellers"));
+          const sellerDocs = sellerQuery.docs;
+          
+          const sellerDoc = sellerDocs.find(doc => doc.data().email === user.email);
+          
+          if (sellerDoc) {
+            const sellerData = sellerDoc.data();
+            setSellerData(sellerData);
+            
+            // Auto-populate seller information in form
             setProductData(prev => ({
               ...prev,
-              sellerId: sellerData.sellerId || sellerData.id || user.uid,
+              sellerId: sellerData.sellerId || sellerDoc.id,
+              sellerName: sellerData.fullName || '',
+              sellerEmail: sellerData.email || user.email,
             }));
+            
+            setMessage(`✅ Logged in as: ${sellerData.fullName || user.email}`);
           } else {
-            setCurrentSeller({ id: user.uid });
+            // If seller profile doesn't exist, use basic user info
             setProductData(prev => ({
               ...prev,
               sellerId: user.uid,
+              sellerName: user.displayName || user.email.split('@')[0],
+              sellerEmail: user.email,
             }));
+            setMessage("⚠️ Seller profile not found. Using basic user information.");
           }
         } catch (error) {
           console.error("Error fetching seller data:", error);
-          // Fallback to auth UID
-          setCurrentSeller({ id: user.uid });
-          setProductData(prev => ({
-            ...prev,
-            sellerId: user.uid,
-          }));
+          setMessage("❌ Failed to load seller information.");
         }
       } else {
-        setCurrentSeller(null);
-        setProductData(prev => ({
-          ...prev,
-          sellerId: ''
-        }));
+        setCurrentUser(null);
+        setSellerData(null);
+        setMessage("❌ Please log in to add products.");
       }
     });
 
     return () => unsubscribe();
   }, []);
 
+  // --- FETCH CATEGORIES AND SUBCATEGORIES ---
   useEffect(() => {
     const fetchInitialData = async () => {
       setLoadingData(true);
@@ -180,13 +211,13 @@ const AddProduct = () => {
           getDocs(collection(db, "categories")),
           getDocs(collection(db, "subcategories"))
         ]);
-
+        
         const fetchedCats = catSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setCategoriesList(fetchedCats);
 
         const fetchedSubCats = subSnap.docs.map(doc => ({
           id: doc.id,
-          name: doc.data().subcategory,
+          name: doc.data().subcategory, 
           ...doc.data()
         }));
         setSubcategoriesList(fetchedSubCats);
@@ -200,50 +231,51 @@ const AddProduct = () => {
     fetchInitialData();
   }, []);
 
-  const filteredCategories = categoriesList.filter(cat =>
+  // --- CALCULATE FILTERED CATEGORIES/SUBCATEGORIES ---
+  const filteredCategories = categoriesList.filter(cat => 
     !productData.productTag || (cat.label && cat.label.toLowerCase() === productData.productTag.toLowerCase())
   );
 
   const filteredSubcategories = subcategoriesList
-    .filter(sub =>
+    .filter(sub => 
       !productData.productTag || (sub.label && sub.label.toLowerCase() === productData.productTag.toLowerCase())
-    )
+    ) 
     .filter(sub => !productData.category || sub.categoryId === productData.category);
 
-  // --- PRODUCT & CATEGORY CHANGE HANDLER (UNMODIFIED) ---
+  // --- HANDLE FORM CHANGES ---
   const handleChange = (e) => {
     const { name, value } = e.target;
 
     if (name === "productTag") {
-      setProductData(prev => ({
-        ...prev,
+      setProductData(prev => ({ 
+        ...prev, 
         [name]: value,
         category: '',
         subCategory: '',
       }));
       return;
     }
-
+    
     if (name === "category") {
       const subsByCat = subcategoriesList.filter(sub => sub.categoryId === value);
-
-      const subsByCatAndLabel = subsByCat.filter(sub =>
+      
+      const subsByCatAndLabel = subsByCat.filter(sub => 
         !productData.productTag || (sub.label && productData.productTag && sub.label.toLowerCase() === productData.productTag.toLowerCase())
       );
-
+      
       const newSubCatId = subsByCatAndLabel.length > 0 ? subsByCatAndLabel[0].id : '';
 
       setProductData(prev => ({
         ...prev,
         category: value,
-        subCategory: newSubCatId,
+        subCategory: newSubCatId, 
       }));
     } else {
       setProductData(prev => ({ ...prev, [name]: value }));
     }
   };
 
-  // --- VARIANT LOGIC (UNMODIFIED) ---
+  // --- VARIANT LOGIC ---
   const handleNewVariantChange = (e) => {
     const { name, value } = e.target;
     setNewVariant(prev => ({ ...prev, [name]: value }));
@@ -266,7 +298,7 @@ const AddProduct = () => {
       v => v.color.toLowerCase() === cleanColor.toLowerCase() && v.size.toLowerCase() === cleanSize.toLowerCase()
     );
 
-    if (exists && cleanColor && cleanSize) {
+    if (exists && cleanColor && cleanSize) { 
       setMessage("❌ A variant with this Color and Size already exists.");
       return;
     }
@@ -277,9 +309,9 @@ const AddProduct = () => {
     }
 
     const newVariantObject = {
-      variantId: Date.now().toString(),
-      color: cleanColor || 'N/A',
-      size: cleanSize || 'N/A',
+      variantId: Date.now().toString(), 
+      color: cleanColor || 'N/A', 
+      size: cleanSize || 'N/A', 
       price: cleanPrice,
       offerPrice: cleanOfferPrice,
       stock: cleanStock,
@@ -301,52 +333,51 @@ const AddProduct = () => {
     }));
     setMessage("✅ Variant removed.");
   };
-
+  
   const availableColors = Array.from(new Set(productData.variants.map(v => v.color))).filter(c => c.trim() !== '' && c.trim() !== 'N/A');
 
   // --- IMAGE MANAGEMENT LOGIC ---
   const handleMainImageChange = (e) => {
     const file = e.target.files ? e.target.files[0] : null;
     if (file) {
-      // Revoke old URL if replacing
       if (mainImageFile && mainImageFile.url) URL.revokeObjectURL(mainImageFile.url);
 
       setMainImageFile({
         file: file,
-        url: URL.createObjectURL(file),
+        url: URL.createObjectURL(file), 
         name: file.name,
-        id: `main-${Date.now()}`
-      });
-      setMessage(`✅ Main Image uploaded: ${file.name}.`);
+        id: `main-${Date.now()}` 
+      }); 
+      setMessage(`✅ Main Image uploaded: ${file.name}.`); 
     } else {
-      setMainImageFile(null);
+      setMainImageFile(null); 
     }
-    e.target.value = null;
+    e.target.value = null; 
   };
-
+  
   const handleGalleryImageChange = (e) => {
     const files = Array.from(e.target.files || []);
-
+    
     const newImages = files.map(file => ({
       file: file,
-      url: URL.createObjectURL(file),
-      color: '',
+      url: URL.createObjectURL(file), 
+      color: '', 
       name: file.name,
-      id: `gallery-${Date.now()}-${Math.random()}`
+      id: `gallery-${Date.now()}-${Math.random()}` 
     }));
 
-    const uniqueNewImages = newImages.filter(newImg =>
+    const uniqueNewImages = newImages.filter(newImg => 
       !galleryFiles.some(existingImg => existingImg.name === newImg.name && existingImg.file.size === newImg.file.size)
     );
 
     setGalleryFiles(prev => [...prev, ...uniqueNewImages]);
-    setMessage(`✅ Added ${uniqueNewImages.length} gallery image(s).`);
-    e.target.value = null;
+    setMessage(`✅ Added ${uniqueNewImages.length} gallery image(s).`); 
+    e.target.value = null; 
   };
 
   const handleColorChangeOnImage = (id, newColor) => {
-    setGalleryFiles(prev =>
-      prev.map(img =>
+    setGalleryFiles(prev => 
+      prev.map(img => 
         img.id === id ? { ...img, color: newColor } : img
       )
     );
@@ -361,21 +392,20 @@ const AddProduct = () => {
 
   const removeGalleryImage = (idToRemove) => {
     const imageObject = galleryFiles.find(p => p.id === idToRemove);
-    if (imageObject && imageObject.url) URL.revokeObjectURL(imageObject.url);
+    if (imageObject && imageObject.url) URL.revokeObjectURL(imageObject.url); 
     setGalleryFiles(prevFiles => prevFiles.filter(p => p.id !== idToRemove));
     setMessage("✅ Gallery image removed.");
   };
 
-  // --- Video Management Logic ---
+  // --- VIDEO MANAGEMENT LOGIC ---
   const handleVideoChange = (e) => {
     const file = e.target.files ? e.target.files[0] : null;
     if (file) {
-      // Revoke old URL if replacing
       if (videoFile && videoFile.url) URL.revokeObjectURL(videoFile.url);
 
       setVideoFile({
         file: file,
-        url: URL.createObjectURL(file),
+        url: URL.createObjectURL(file), 
         name: file.name,
         id: `video-${Date.now()}`
       });
@@ -383,11 +413,11 @@ const AddProduct = () => {
     } else {
       setVideoFile(null);
     }
-    e.target.value = null;
+    e.target.value = null; 
   };
 
   const removeVideo = () => {
-    if (videoFile && videoFile.url) URL.revokeObjectURL(videoFile.url);
+    if (videoFile && videoFile.url) URL.revokeObjectURL(videoFile.url); 
     setVideoFile(null);
     if (document.getElementById("videoFile")) document.getElementById("videoFile").value = "";
     setMessage("✅ Product Video removed.");
@@ -401,19 +431,20 @@ const AddProduct = () => {
       sku: '',
       hsnCode: '',
       brand: '',
-      category: '',
-      subCategory: '',
-      sellerId: currentSeller?.sellerId || currentSeller?.id || '',
-      productTag: '',
-      variants: [],
+      category: '', 
+      subCategory: '', 
+      sellerId: sellerData?.sellerId || currentUser?.uid || '',
+      sellerName: sellerData?.fullName || currentUser?.displayName || currentUser?.email?.split('@')[0] || '',
+      sellerEmail: sellerData?.email || currentUser?.email || '',
+      productTag: '', 
+      variants: [], 
     });
     setNewVariant({ color: '', size: '', price: '', offerPrice: '', stock: '' });
 
-    // Revoke object URLs before clearing state
     if (mainImageFile && mainImageFile.url) URL.revokeObjectURL(mainImageFile.url);
     galleryFiles.forEach(img => URL.revokeObjectURL(img.url));
     if (videoFile && videoFile.url) URL.revokeObjectURL(videoFile.url);
-
+    
     setMainImageFile(null);
     setGalleryFiles([]);
     setVideoFile(null);
@@ -433,13 +464,20 @@ const AddProduct = () => {
   // --- SUBMIT HANDLER ---
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Check if user is logged in
+    if (!currentUser) {
+      setMessage("❌ Please log in to add products.");
+      return;
+    }
+    
     setMessage('');
     setLoading(true);
 
     try {
       let imageUrls = [];
       let mainDownloadURL = '';
-      let videoDownloadURL = '';
+      let videoDownloadURL = ''; 
 
       // A. Main Image Upload
       if (mainImageFile) {
@@ -455,15 +493,17 @@ const AddProduct = () => {
           path: mainFileName,
           type: 'file',
           isMain: true,
-          color: '',
+          color: '', 
         });
       }
 
       // B. Gallery Images Upload
       for (const imageObject of galleryFiles) {
         const galleryFile = imageObject.file;
-        const galleryFileName = `products/${Date.now()}_gallery_${galleryFile.name}`;
+
+        const galleryFileName = `products/${Date.now()}_gallery_${galleryFile.name.replace(/\s+/g, "_")}`;
         const galleryStorageRef = ref(storage, galleryFileName);
+
         await uploadBytes(galleryStorageRef, galleryFile);
         const galleryDownloadURL = await getDownloadURL(galleryStorageRef);
 
@@ -471,9 +511,9 @@ const AddProduct = () => {
           url: galleryDownloadURL,
           name: galleryFile.name,
           path: galleryFileName,
-          type: 'file',
+          type: "file",
           isMain: false,
-          color: imageObject.color,
+          color: imageObject.color || "",
         });
       }
 
@@ -486,7 +526,7 @@ const AddProduct = () => {
         videoDownloadURL = await getDownloadURL(storageRef);
       }
 
-      // --- 4. PREPARE DATA FOR FIRESTORE ---
+      // --- PREPARE DATA FOR FIRESTORE ---
       const selectedCategory = categoriesList.find(cat => cat.id === productData.category);
       const selectedSubCategory = subcategoriesList.find(sub => sub.id === productData.subCategory);
 
@@ -501,54 +541,58 @@ const AddProduct = () => {
           name: selectedSubCategory ? selectedSubCategory.name : 'N/A',
         } : null,
       };
-      const sellerId = currentSeller?.sellerId || currentSeller?.id || productData.sellerId;
+      
+      const finalMainImage =
+        mainDownloadURL ||
+        imageUrls.find(img => img.isMain)?.url ||
+        imageUrls[0]?.url ||
+        null;
+
+      const normalizedImages = normalizeImages(imageUrls, finalMainImage);
 
       const productToSave = {
-        name: productData.name || '',
-        description: productData.description || '',
-        sku: productData.sku || '',
-        hsnCode: productData.hsnCode || '',
-        brand: productData.brand || '',
-        category: tempProductForKeywords.category,
-        subCategory: tempProductForKeywords.subCategory,
+        name: productData.name,
+        description: productData.description,
+        sku: productData.sku,
+        hsnCode: productData.hsnCode,
+        brand: productData.brand,
 
-        // Save seller ID in multiple fields for compatibility
-        sellerId: sellerId,
-        sellerid: sellerId,
-        sellerID: sellerId,
-      
-        productTag: productData.productTag || '',
-        variants: productData.variants,
+        category: selectedCategory
+          ? { id: selectedCategory.id, name: selectedCategory.name }
+          : null,
 
-        imageUrls: imageUrls,
-        mainImageUrl: mainDownloadURL,
-        videoUrl: videoDownloadURL,
+        subCategory: selectedSubCategory
+          ? { id: selectedSubCategory.id, name: selectedSubCategory.name }
+          : null,
 
-        searchKeywords: generateSearchKeywords(tempProductForKeywords),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: 'Active',
+        // Seller Information (auto-populated from logged-in user)
+        sellerId: productData.sellerId,
+        sellerName: productData.sellerName,
+        sellerEmail: productData.sellerEmail,
+        
+        productTag: productData.productTag,
+
+        // Images
+        mainImageUrl: finalMainImage || null,
+        imageUrls: normalizedImages,
+
+        // Video
+        videoUrl: videoDownloadURL || null,
+        videoPath: videoFile?.path || null,
+
+        variants: productData.variants || [],
+
+        imageStatus: "completed",
+        status: "Active",
+
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
 
-      // --- 5. SAVE TO FIRESTORE ---
+      // --- SAVE TO FIRESTORE ---
       const docRef = await addDoc(collection(db, "products"), productToSave);
-      
-      // Create the complete product object with ID
-      const newProduct = {
-        id: docRef.id,
-        ...productToSave
-      };
 
-      // --- 6. DISPATCH EVENT TO UPDATE SELLERPRODUCTS ---
-      const newProductEvent = new CustomEvent('newProductAdded', {
-        detail: {
-          type: 'NEW_PRODUCT_ADDED',
-          product: newProduct
-        }
-      });
-      window.dispatchEvent(newProductEvent);
-
-      // --- 7. CLEANUP AND SUCCESS ---
+      // --- SUCCESS ---
       setNewlyAddedProductId(docRef.id);
       setShowSuccessModal(true);
 
@@ -560,28 +604,38 @@ const AddProduct = () => {
     }
   };
 
-  const isFormDisabled = loading || loadingData;
+  const isFormDisabled = loading || loadingData || !currentUser;
   const isSuccess = message.startsWith("✅");
   const messageClass = isSuccess
     ? "bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 text-green-700"
     : "bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 text-red-700";
 
+  // Display login message if not authenticated
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8 px-4 flex items-center justify-center">
+        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+          <FiUser className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Login Required</h2>
+          <p className="text-gray-600 mb-6">Please log in to add products.</p>
+          <div className="p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700">
+            <span className="font-medium">Seller ID: Not Available (Please Login)</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
-
+ 
         <div className="text-center mb-8">
           <h1 className="text-4xl font-extrabold text-gray-900 flex items-center justify-center space-x-3">
             <FiShoppingBag className="w-8 h-8 text-blue-600" />
             <span>Add New Product</span>
           </h1>
           <p className="text-gray-500 mt-2">Enter the details, variants, and media for the new product listing.</p>
-          {productData.sellerId && (
-            <div className="mt-2 inline-flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-              <FiUser className="w-3 h-3 mr-1" />
-              Seller ID: {productData.sellerId}
-            </div>
-          )}
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
@@ -591,7 +645,7 @@ const AddProduct = () => {
               <span className="font-medium">Loading initial setup data...</span>
             </div>
           )}
-
+          
           {message && (
             <div className={`p-4 flex items-center ${messageClass}`}>
               {isSuccess ? <FiCheck className="w-5 h-5 mr-3" /> : <FiX className="w-5 h-5 mr-3" />}
@@ -601,6 +655,7 @@ const AddProduct = () => {
 
           <form onSubmit={handleSubmit} className="p-8 space-y-8">
 
+            {/* BASIC INFORMATION WITH AUTO-FILLED SELLER ID */}
             <div className="space-y-4">
               <h3 className="text-xl font-semibold text-gray-800 flex items-center">
                 <FiPackage className="w-6 h-6 mr-3 text-blue-600" />
@@ -612,33 +667,35 @@ const AddProduct = () => {
                   name="name"
                   value={productData.name}
                   onChange={handleChange}
-                  placeholder="Product Name"
+                  placeholder="Product Name" 
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg"
                   disabled={isFormDisabled}
                   required
                 />
-
                 <div className="relative">
                   <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
                     type="text"
                     name="sellerId"
                     value={productData.sellerId}
+                    onChange={handleChange}
+                    placeholder="Seller ID" 
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-600 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                    disabled={true} // Disabled because it's auto-filled
                     readOnly
-                    placeholder="Seller ID"
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-700 cursor-not-allowed"
-                    disabled={true}
                   />
-                  <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">
+                  <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-green-600 font-semibold">
                     Auto-filled
                   </span>
                 </div>
-
-                <div className="hidden md:block"></div>
+                
+                {/* Hidden inputs for seller name and email */}
+                <input type="hidden" name="sellerName" value={productData.sellerName} />
+                <input type="hidden" name="sellerEmail" value={productData.sellerEmail} />
               </div>
             </div>
-
-            {/* PRODUCT DESCRIPTION (UNMODIFIED) */}
+            
+            {/* PRODUCT DESCRIPTION */}
             <div className="space-y-4">
               <h3 className="text-xl font-semibold text-gray-800 flex items-center">
                 <FiFileText className="w-6 h-6 mr-3 text-red-600" />
@@ -652,6 +709,7 @@ const AddProduct = () => {
                 rows="4"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
                 disabled={isFormDisabled}
+                required
               />
             </div>
 
@@ -663,36 +721,34 @@ const AddProduct = () => {
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                {/* 1. Main Image Control or Preview */}
-                <div className="h-30">
+                
+                {/* Main Image Upload */}
+                <div className="h-30"> 
                   {!mainImageFile ? (
-                    <div className="h-full border-2 border-dashed border-pink-300 rounded-xl p-4 text-center hover:border-pink-500 transition-colors duration-200 bg-white flex flex-col justify-center">
+                    <label htmlFor="mainImageFile" className="h-full border-2 border-dashed border-pink-300 rounded-xl p-4 text-center hover:border-pink-500 transition-colors duration-200 bg-white flex flex-col justify-center cursor-pointer">
                       <FiUpload className="w-6 h-6 text-pink-400 mx-auto mb-2" />
-                      <label htmlFor="mainImageFile" className="cursor-pointer">
-                        <span className="text-md font-medium text-gray-700 block mb-1">Upload Main Product Image</span>
-                        <p className="text-gray-500 text-xs">(Recommended)</p>
-                        <input
-                          type="file"
-                          id="mainImageFile"
-                          accept="image/*"
-                          onChange={handleMainImageChange}
-                          className="hidden"
-                          disabled={isFormDisabled}
-                        />
-                      </label>
-                    </div>
+                      <span className="text-md font-medium text-gray-700 block mb-1">Upload Main Product Image</span>
+                      <p className="text-gray-500 text-xs">(Required)</p>
+                      <input 
+                        type="file"
+                        id="mainImageFile"
+                        accept="image/*"
+                        onChange={handleMainImageChange}
+                        className="hidden"
+                        disabled={isFormDisabled}
+                      />
+                    </label>
                   ) : (
-                    <div
-                      key={mainImageFile.id}
-                      className="relative rounded-xl overflow-hidden shadow-lg border-4 border-yellow-500 h-full w-full bg-gray-50 flex items-center justify-center"
+                    <div 
+                      key={mainImageFile.id} 
+                      className="relative rounded-xl overflow-hidden shadow-lg border-4 border-yellow-500 h-full w-full bg-gray-50 flex items-center justify-center" 
                     >
                       <img
                         src={mainImageFile.url}
                         alt={mainImageFile.name}
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-contain" 
                       />
-
+                      
                       <button
                         type="button"
                         onClick={removeMainImage}
@@ -702,15 +758,15 @@ const AddProduct = () => {
                       >
                         <FiX className="w-3 h-3" />
                       </button>
-
-                      <label
-                        htmlFor="mainImageFile"
+                      
+                      <label 
+                        htmlFor="mainImageFile" 
                         className="absolute bottom-2 left-2 bg-blue-600 text-white p-2 rounded-lg shadow-lg hover:bg-blue-700 transition-colors z-20 cursor-pointer flex items-center space-x-1"
                         title="Replace Image"
                       >
                         <FiUpload className="w-4 h-4" />
                         <span className="text-xs font-medium hidden sm:inline">Replace</span>
-                        <input
+                        <input 
                           type="file"
                           id="mainImageFile"
                           accept="image/*"
@@ -723,30 +779,28 @@ const AddProduct = () => {
                   )}
                 </div>
 
-                {/* 2. Video Upload Control or Preview */}
-                <div className="h-30">
+                {/* Video Upload */}
+                <div className="h-30"> 
                   {!videoFile ? (
-                    <div className="h-full border-2 border-dashed border-violet-300 rounded-xl p-4 text-center hover:border-violet-500 transition-colors duration-200 bg-white flex flex-col justify-center">
+                    <label htmlFor="videoFile" className="h-full border-2 border-dashed border-violet-300 rounded-xl p-4 text-center hover:border-violet-500 transition-colors duration-200 bg-white flex flex-col justify-center cursor-pointer">
                       <FiVideo className="w-6 h-6 text-violet-400 mx-auto mb-2" />
-                      <label htmlFor="videoFile" className="cursor-pointer">
-                        <span className="text-md font-medium text-gray-700 block mb-1">Upload Product Video</span>
-                        <p className="text-gray-500 text-xs">(Max 1 file)</p>
-                        <input
-                          type="file"
-                          id="videoFile"
-                          accept="video/*"
-                          onChange={handleVideoChange}
-                          className="hidden"
-                          disabled={isFormDisabled}
-                        />
-                      </label>
-                    </div>
+                      <span className="text-md font-medium text-gray-700 block mb-1">Upload Product Video</span>
+                      <p className="text-gray-500 text-xs">(Optional)</p>
+                      <input 
+                        type="file"
+                        id="videoFile"
+                        accept="video/*"
+                        onChange={handleVideoChange}
+                        className="hidden"
+                        disabled={isFormDisabled}
+                      />
+                    </label>
                   ) : (
                     <div className="p-3 border-4 border-violet-500 rounded-xl bg-white flex flex-col h-full shadow-lg justify-center relative">
                       <FiVideo className="w-6 h-6 text-violet-600 flex-shrink-0 mx-auto mb-1" />
                       <p className="font-semibold text-gray-800 truncate text-center text-sm" title={videoFile.name}>{videoFile.name}</p>
                       <p className="text-xs text-gray-500 text-center">Video Ready</p>
-
+                      
                       <button
                         type="button"
                         onClick={removeVideo}
@@ -756,15 +810,15 @@ const AddProduct = () => {
                       >
                         <FiX className="w-3 h-3" />
                       </button>
-
-                      <label
-                        htmlFor="videoFile"
+                      
+                      <label 
+                        htmlFor="videoFile" 
                         className="absolute bottom-2 left-2 bg-blue-600 text-white p-2 rounded-lg shadow-lg hover:bg-blue-700 transition-colors z-20 cursor-pointer flex items-center space-x-1"
                         title="Replace Video"
                       >
                         <FiUpload className="w-4 h-4" />
                         <span className="text-xs font-medium hidden sm:inline">Replace</span>
-                        <input
+                        <input 
                           type="file"
                           id="videoFile"
                           accept="video/*"
@@ -779,46 +833,36 @@ const AddProduct = () => {
               </div>
             </div>
 
-            {/* GALLERY IMAGE UPLOAD & PREVIEWS */}
+            {/* GALLERY IMAGES */}
             <div className="space-y-6 border p-6 rounded-xl bg-pink-50 border-pink-200">
-              <h3 className="text-xl font-semibold text-gray-800 flex items-center">
-                <FiCamera className="w-6 h-6 mr-3 text-pink-600" />
-                Gallery Images
-              </h3>
-
-              {availableColors.length === 0 && (
-                <div className="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
-                  <p className="font-semibold">ℹ️ Note:</p>
-                  <p className="text-sm">Adding a Color to a Product Variant will enable the color assignment dropdown for images.</p>
-                </div>
-              )}
-
-              {/* Gallery Images Control */}
               {galleryFiles.length === 0 ? (
-                <div className="border-2 border-dashed border-blue-400 rounded-xl p-6 text-center hover:border-blue-600 transition-colors duration-200 bg-white" style={{ borderColor: '#81b2f7', borderStyle: 'dashed' }}>
+                <label 
+                  htmlFor="galleryImages" 
+                  className="border-2 border-dashed border-blue-400 rounded-xl p-6 text-center hover:border-blue-600 transition-colors duration-200 bg-white cursor-pointer block" 
+                  style={{ borderColor: '#81b2f7', borderStyle: 'dashed' }}
+                >
                   <FiCamera className="w-8 h-8 text-blue-500 mx-auto mb-3" />
-                  <label htmlFor="galleryImages" className="cursor-pointer">
-                    <span className="text-lg font-semibold text-gray-700 block mb-1">Upload Gallery Images (N number)</span>
-                    <p className="text-gray-500 text-md">(Optional Color Assignment)</p>
-                    <input
-                      type="file"
-                      id="galleryImages"
-                      multiple
-                      accept="image/*"
-                      onChange={handleGalleryImageChange}
-                      className="hidden"
-                      disabled={isFormDisabled}
-                    />
-                  </label>
-                </div>
-              ) : (
+                  <span className="text-lg font-semibold text-gray-700 block mb-1">Upload Gallery Images</span>
+                  <p className="text-gray-500 text-md">(Optional)</p>
+                  <input 
+                    type="file"
+                    id="galleryImages"
+                    multiple
+                    accept="image/*"
+                    onChange={handleGalleryImageChange}
+                    className="hidden"
+                    disabled={isFormDisabled}
+                  />
+                </label>
+              ) : null}
+
+              {galleryFiles.length > 0 && (
                 <div className="mt-0 p-4 border border-gray-300 rounded-lg bg-white">
                   <p className="text-sm font-bold text-gray-700 mb-3 flex justify-between items-center">
                     <span>Gallery Image Previews ({galleryFiles.length}):</span>
                     <label htmlFor="galleryImages" className="cursor-pointer text-blue-600 hover:text-blue-800 text-sm font-semibold flex items-center space-x-1">
-                      <FiPlus className="w-4 h-4" /> 
-                      <span>Add More</span>
-                      <input
+                      <FiPlus className="w-4 h-4" /> <span>Add More</span>
+                      <input 
                         type="file"
                         id="galleryImages"
                         multiple
@@ -831,8 +875,8 @@ const AddProduct = () => {
                   </p>
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
                     {galleryFiles.map((image) => (
-                      <div
-                        key={image.id}
+                      <div 
+                        key={image.id} 
                         className={`relative rounded-lg overflow-hidden shadow-md group border-2 ${image.color ? 'border-green-500' : 'border-gray-300'}`}
                       >
                         <img
@@ -840,11 +884,11 @@ const AddProduct = () => {
                           alt={image.name}
                           className="w-full h-20 object-cover"
                         />
-
-                        <span className="absolute top-0 left-0 text-white text-xs font-bold px-2 py-1 rounded-br-lg z-10 bg-pink-600">
+                        
+                        <span className={`absolute top-0 left-0 text-white text-xs font-bold px-2 py-1 rounded-br-lg z-10 bg-pink-600`}>
                           GALLERY
                         </span>
-
+                        
                         <button
                           type="button"
                           onClick={() => removeGalleryImage(image.id)}
@@ -854,8 +898,7 @@ const AddProduct = () => {
                         >
                           <FiX className="w-3 h-3" />
                         </button>
-
-                        {/* Color Assignment Dropdown */}
+                        
                         <div className="p-1 bg-gray-50 border-t border-gray-200">
                           <div className="relative">
                             <FiChevronDown className="absolute right-1 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3 pointer-events-none" />
@@ -885,7 +928,7 @@ const AddProduct = () => {
               )}
             </div>
 
-            {/* PRODUCT DETAILS (IDENTIFIERS) */}
+            {/* PRODUCT DETAILS */}
             <div className="space-y-4">
               <h3 className="text-xl font-semibold text-gray-800 flex items-center">
                 <FiTag className="w-6 h-6 mr-3 text-purple-600" />
@@ -930,8 +973,7 @@ const AddProduct = () => {
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-                {/* 1. Product Label Select */}
+                
                 <div className="relative">
                   <FiTag className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
@@ -942,16 +984,15 @@ const AddProduct = () => {
                     className="appearance-none w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-200"
                     disabled={isFormDisabled}
                   >
-                    <option value="" disabled={false}>Select Product Label</option>
+                    <option value="" disabled={false}>Select Product Label</option> 
                     {PRODUCT_TAG_OPTIONS.map(option => (
-                      <option key={option.value} value={option.value} disabled={false}>
+                      <option key={option.value} value={option.value} disabled={false}> 
                         {option.label}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                {/* 2. Category Select */}
+                
                 <div className="relative">
                   <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
                   <select
@@ -961,14 +1002,13 @@ const AddProduct = () => {
                     className="appearance-none w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
                     disabled={isFormDisabled || filteredCategories.length === 0}
                   >
-                    <option value="">Select Category</option>
+                    <option value="">Select Category</option> 
                     {filteredCategories.map(cat => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
-
-                {/* 3. SubCategory Select */}
+                
                 <div className="relative">
                   <FiChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
                   <select
@@ -987,14 +1027,13 @@ const AddProduct = () => {
               </div>
             </div>
 
-            {/* PRODUCT VARIANT MANAGEMENT */}
+            {/* PRODUCT VARIANTS */}
             <div className="space-y-6 border p-6 rounded-xl bg-orange-50 border-orange-200">
               <h3 className="text-xl font-semibold text-gray-800 flex items-center">
                 <FiDroplet className="w-6 h-6 mr-3 text-orange-600" />
                 Product Variants (Color, Size, Price, Stock)
               </h3>
-
-              {/* Variant Input Form */}
+              
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end border-b pb-4 mb-4">
                 <input
                   type="text"
@@ -1010,7 +1049,7 @@ const AddProduct = () => {
                   name="size"
                   value={newVariant.size}
                   onChange={handleNewVariantChange}
-                  placeholder="Size"
+                  placeholder="Size" 
                   className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   disabled={isFormDisabled}
                 />
@@ -1021,7 +1060,7 @@ const AddProduct = () => {
                     name="price"
                     value={newVariant.price}
                     onChange={handleNewVariantChange}
-                    placeholder="Price (₹)"
+                    placeholder="Price (₹)" 
                     min="0"
                     step="0.01"
                     className="w-full pl-8 pr-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -1047,7 +1086,7 @@ const AddProduct = () => {
                   name="stock"
                   value={newVariant.stock}
                   onChange={handleNewVariantChange}
-                  placeholder="Stock"
+                  placeholder="Stock" 
                   min="0"
                   className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   disabled={isFormDisabled}
@@ -1062,38 +1101,37 @@ const AddProduct = () => {
                   <span className="hidden md:inline">Add</span>
                 </button>
               </div>
-
-              {/* Variant List */}
+              
               {productData.variants.length > 0 && (
                 <div className="space-y-3 pt-2">
                   <h4 className="text-sm font-semibold text-gray-700">Current Variants ({productData.variants.length})</h4>
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="grid grid-cols-5 md:grid-cols-6 text-xs font-bold text-gray-600 bg-gray-100 p-2">
-                      <span className="col-span-1">Color</span>
-                      <span className="col-span-1">Size</span>
-                      <span className="col-span-1">Price</span>
-                      <span className="col-span-1">Offer Price</span>
-                      <span className="col-span-1">Stock</span>
-                      <span className="col-span-1 text-right">Action</span>
+                        <span className="col-span-1">Color</span>
+                        <span className="col-span-1">Size</span>
+                        <span className="col-span-1">Price</span>
+                        <span className="col-span-1">Offer Price</span>
+                        <span className="col-span-1">Stock</span>
+                        <span className="col-span-1 text-right">Action</span>
                     </div>
                     {productData.variants.map((v) => (
-                      <div key={v.variantId} className="grid grid-cols-5 md:grid-cols-6 text-sm p-2 border-t border-gray-200 hover:bg-white transition-colors items-center">
-                        <span className="col-span-1 font-medium">{v.color}</span>
-                        <span className="col-span-1 font-medium">{v.size}</span>
-                        <span className="col-span-1">₹{v.price.toFixed(2)}</span>
-                        <span className="col-span-1 text-red-600">{v.offerPrice ? `₹${v.offerPrice.toFixed(2)}` : '-'}</span>
-                        <span className="col-span-1">{v.stock}</span>
-                        <span className="col-span-1 text-right">
-                          <button
-                            type="button"
-                            onClick={() => removeVariant(v.variantId)}
-                            className="text-red-500 hover:text-red-700 p-1 rounded disabled:opacity-50"
-                            disabled={isFormDisabled}
-                          >
-                            <FiX className="w-4 h-4" />
-                          </button>
-                        </span>
-                      </div>
+                        <div key={v.variantId} className="grid grid-cols-5 md:grid-cols-6 text-sm p-2 border-t border-gray-200 hover:bg-white transition-colors items-center">
+                            <span className="col-span-1 font-medium">{v.color}</span>
+                            <span className="col-span-1 font-medium">{v.size}</span>
+                            <span className="col-span-1">₹{v.price.toFixed(2)}</span>
+                            <span className="col-span-1 text-red-600">{v.offerPrice ? `₹${v.offerPrice.toFixed(2)}` : '-'}</span>
+                            <span className="col-span-1">{v.stock}</span>
+                            <span className="col-span-1 text-right">
+                                <button
+                                    type="button"
+                                    onClick={() => removeVariant(v.variantId)}
+                                    className="text-red-500 hover:text-red-700 p-1 rounded disabled:opacity-50"
+                                    disabled={isFormDisabled}
+                                >
+                                    <FiX className="w-4 h-4" />
+                                </button>
+                            </span>
+                        </div>
                     ))}
                   </div>
                 </div>
@@ -1114,7 +1152,7 @@ const AddProduct = () => {
               ) : (
                 <>
                   <FiPlus className="w-6 h-6" />
-                  <span>Add Product to Database</span>
+                  <span>Add Product</span>
                 </>
               )}
             </button>
@@ -1131,16 +1169,13 @@ const AddProduct = () => {
               <FiCheck className="w-12 h-12 text-green-500 mx-auto mb-4 bg-green-100 p-2 rounded-full" />
               <h3 className="text-2xl font-bold text-gray-900">Product Added Successfully!</h3>
               <p className="mt-2 text-gray-600">
-                Your product, {productData.name || 'Untitled Product'}, has been successfully uploaded and saved to the database.
+                Your product, **{productData.name || 'Untitled Product'}**, has been successfully uploaded and saved to the database.
               </p>
               <p className="mt-1 text-sm text-gray-500">
                 Product ID: <span className="font-mono bg-gray-100 p-1 rounded text-xs">{newlyAddedProductId}</span>
               </p>
-              <p className="mt-2 text-sm text-blue-600">
-                Seller ID: <span className="font-mono bg-blue-100 p-1 rounded">{productData.sellerId}</span>
-              </p>
-              <p className="mt-3 text-sm text-green-600 font-medium">
-                The product will now appear in your inventory list.
+              <p className="mt-2 text-sm text-green-600 font-semibold">
+                Added by: {sellerData?.fullName || currentUser?.email} (Seller ID: {productData.sellerId})
               </p>
             </div>
             <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
@@ -1162,7 +1197,6 @@ const AddProduct = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

@@ -997,7 +997,7 @@ const SellerProducts = React.memo(() => {
             onUpdateDetails={handleUpdateProductDetails}
             isUpdatingDetails={isUpdatingDetails}
             addNewProductToList={addNewProductToList}
-            onSellProduct={handleOpenPurchaseModal} 
+            onSellProduct={handleOpenPurchaseModal}
           />
         )}
 
@@ -1859,11 +1859,11 @@ const ProductDetailsModal = React.memo(({
           ) : (
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                className="flex-1 px-4 py-2.5 bg-blue-100 text-blue-700 font-medium rounded-lg hover:bg-blue-200 transition-colors flex items-center justify-center gap-2"
-                onClick={() => setIsEditMode(true)}
-                disabled={isDisabled}
+                onClick={() => {
+                  window.location.href = `/products/edit/${product.id}`;
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg"
               >
-                <Edit className="w-4 h-4" />
                 Edit Product
               </button>
               <button
