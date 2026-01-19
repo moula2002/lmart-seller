@@ -668,7 +668,7 @@ const AddProduct = () => {
                   value={productData.name}
                   onChange={handleChange}
                   placeholder="Product Name" 
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200 text-lg"
                   disabled={isFormDisabled}
                   required
                 />
@@ -707,7 +707,7 @@ const AddProduct = () => {
                 onChange={handleChange}
                 placeholder="Detailed description of the product..."
                 rows="4"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200"
                 disabled={isFormDisabled}
                 required
               />
@@ -941,7 +941,7 @@ const AddProduct = () => {
                   value={productData.sku}
                   onChange={handleChange}
                   placeholder="SKU Code"
-                  className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                  className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200"
                   disabled={isFormDisabled}
                 />
                 <input
@@ -950,7 +950,7 @@ const AddProduct = () => {
                   value={productData.brand}
                   onChange={handleChange}
                   placeholder="Brand Name"
-                  className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                  className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200transition-all duration-200"
                   disabled={isFormDisabled}
                 />
                 <input
@@ -959,7 +959,7 @@ const AddProduct = () => {
                   value={productData.hsnCode}
                   onChange={handleChange}
                   placeholder="HSN Code"
-                  className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                  className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200"
                   disabled={isFormDisabled}
                 />
               </div>
@@ -981,10 +981,10 @@ const AddProduct = () => {
                     name="productTag"
                     value={productData.productTag}
                     onChange={handleChange}
-                    className="appearance-none w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all duration-200"
+                    className="appearance-none w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200"
                     disabled={isFormDisabled}
                   >
-                    <option value="" disabled={false}>Select Product Label</option> 
+                   
                     {PRODUCT_TAG_OPTIONS.map(option => (
                       <option key={option.value} value={option.value} disabled={false}> 
                         {option.label}
@@ -999,10 +999,10 @@ const AddProduct = () => {
                     name="category"
                     value={productData.category}
                     onChange={handleChange}
-                    className="appearance-none w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                    className="appearance-none w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200"
                     disabled={isFormDisabled || filteredCategories.length === 0}
                   >
-                    <option value="">Select Category</option> 
+                     
                     {filteredCategories.map(cat => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
@@ -1015,10 +1015,10 @@ const AddProduct = () => {
                     name="subCategory"
                     value={productData.subCategory}
                     onChange={handleChange}
-                    className="appearance-none w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
+                    className="appearance-none w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-0  focus:border-gray-200 transition-all duration-200"
                     disabled={isFormDisabled || filteredSubcategories.length === 0}
                   >
-                    <option value="">Select Subcategory</option>
+                    
                     {filteredSubcategories.map(subCat => (
                       <option key={subCat.id} value={subCat.id}>{subCat.name}</option>
                     ))}
@@ -1041,7 +1041,7 @@ const AddProduct = () => {
                   value={newVariant.color}
                   onChange={handleNewVariantChange}
                   placeholder="Color"
-                  className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-0  focus:border-gray-200"
                   disabled={isFormDisabled}
                 />
                 <input
@@ -1050,7 +1050,7 @@ const AddProduct = () => {
                   value={newVariant.size}
                   onChange={handleNewVariantChange}
                   placeholder="Size" 
-                  className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-0  focus:border-gray-200"
                   disabled={isFormDisabled}
                 />
                 <div className="relative col-span-2 md:col-span-1">
@@ -1063,7 +1063,7 @@ const AddProduct = () => {
                     placeholder="Price (₹)" 
                     min="0"
                     step="0.01"
-                    className="w-full pl-8 pr-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full pl-8 pr-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-0  focus:border-gray-200"
                     disabled={isFormDisabled}
                   />
                 </div>
@@ -1077,7 +1077,7 @@ const AddProduct = () => {
                     placeholder="Offer (₹)"
                     min="0"
                     step="0.01"
-                    className="w-full pl-8 pr-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full pl-8 pr-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-0  focus:border-gray-200"
                     disabled={isFormDisabled}
                   />
                 </div>
@@ -1088,7 +1088,7 @@ const AddProduct = () => {
                   onChange={handleNewVariantChange}
                   placeholder="Stock" 
                   min="0"
-                  className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  className="px-3 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-0  focus:border-gray-200"
                   disabled={isFormDisabled}
                 />
                 <button
