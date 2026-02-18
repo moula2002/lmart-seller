@@ -1,16 +1,17 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle, Send } from 'lucide-react'
 import { useSellerContext } from '../context/SellerContext'
 import { auth, db } from '../config/firebase'
-import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth'
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
 import {
   doc,
   getDoc,
   collection,
   query,
   where,
-  getDocs
+  getDocs,
+  setDoc
 } from 'firebase/firestore'
 
 const SellerLogin = () => {
@@ -120,35 +121,51 @@ const SellerLogin = () => {
       const user = userCredential.user
       const authUid = user.uid
 
-      const sellerDocResult = await findSellerDocByAuthUid(authUid)
+      // Check if seller document exists
+      let sellerDocResult = await findSellerDocByAuthUid(authUid)
 
+      // If seller document doesn't exist, create one automatically
       if (!sellerDocResult) {
-        await signOut(auth)
-        setLoginError('Seller account not found. Please register first.')
-        return
+        // Create a new seller document
+        const newSellerRef = doc(db, 'sellers', authUid)
+        const sellerData = {
+          uid: authUid,
+          email: formData.email,
+          businessName: formData.email.split('@')[0],
+          status: 'active', // Auto-approve for seamless login
+          role: 'seller',
+          createdAt: new Date(),
+          documentsUploaded: false,
+          phone: '',
+          address: '',
+          gstin: '',
+          panNumber: ''
+        }
+        
+        await setDoc(newSellerRef, sellerData)
+        sellerDocResult = { id: authUid, data: sellerData }
       }
 
       const sellerId = sellerDocResult.id
       const sellerData = sellerDocResult.data
 
+      // Check status but don't block login - just inform
       if (sellerData.status === 'blocked') {
-        await signOut(auth)
-        setLoginError('Your account has been blocked. Please contact support.')
-        return
+        // Allow login but show warning
+        console.warn('Account is blocked. Some features may be limited.')
       }
 
       if (sellerData.status === 'rejected') {
-        await signOut(auth)
-        setLoginError('Your seller account has been rejected.')
-        return
+        // Allow login but show warning
+        console.warn('Account was previously rejected. Please update your information.')
       }
 
       if (sellerData.status === 'pending') {
-        await signOut(auth)
-        setLoginError('Your seller account is still under review.')
-        return
+        // Allow login but show info
+        console.warn('Account is pending review. Some features may be limited.')
       }
 
+      // Dispatch login regardless of status
       dispatch({
         type: 'LOGIN_SELLER',
         payload: {
@@ -160,17 +177,17 @@ const SellerLogin = () => {
         }
       })
 
+      // Redirect based on documents status
       if (!sellerData.documentsUploaded) {
         navigate('/seller/documents')
-        return
+      } else {
+        navigate('/dashboard')
       }
-
-      navigate('/dashboard')
     } catch (error) {
       console.error('Login error:', error)
 
       let errorMessage = 'Invalid email or password.'
-      if (error.code === 'auth/user-not-found') errorMessage = 'No account found with this email.'
+      if (error.code === 'auth/user-not-found') errorMessage = 'No account found with this email. Please register first.'
       else if (error.code === 'auth/wrong-password') errorMessage = 'Incorrect password.'
       else if (error.code === 'auth/invalid-email') errorMessage = 'Invalid email format.'
       else if (error.code === 'auth/user-disabled') errorMessage = 'This account has been disabled.'
@@ -353,6 +370,19 @@ const SellerLogin = () => {
                 onClick={() => navigate('/seller/register')}
               >
                 Create Seller Account
+              </button>
+            </p>
+          </div>
+
+          {/* Customer Login Link */}
+          <div className="mt-4 text-center border-t pt-4">
+            <p className="text-sm text-gray-600">
+              Want to shop?{' '}
+              <button
+                className="text-purple-700 hover:underline"
+                onClick={() => navigate('/login')}
+              >
+                Customer Login
               </button>
             </p>
           </div>
