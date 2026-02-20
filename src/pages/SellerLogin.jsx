@@ -364,19 +364,6 @@ const SellerLogin = () => {
             </p>
           </div>
 
-          {/* Customer Login Link */}
-          <div className="mt-4 text-center border-t pt-4">
-            <p className="text-sm text-gray-600">
-              Want to shop?{' '}
-              <button
-                className="text-purple-700 hover:underline"
-                onClick={() => navigate('/login')}
-              >
-                Customer Login
-              </button>
-            </p>
-          </div>
-
           {/* Forgot password inline panel */}
           {forgotOpen && (
             <div className="mt-6 bg-white/70 backdrop-blur border border-purple-200 rounded-md p-4">
