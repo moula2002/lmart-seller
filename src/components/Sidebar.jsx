@@ -16,15 +16,14 @@ const Sidebar = ({ user, onLogout }) => {
   const location = useLocation()
 
   const menuItems = [
-    { path: '/profile', icon: User, label: 'Profile' },
-    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/documentation', icon: FileText, label: 'Seller Documentation' },
-    { path: '/products', icon: Package, label: 'My Products' },
-    { path: '/edit-products', icon: Package, label: 'Edit Products' },
-    { path: '/orders', icon: ShoppingCart, label: 'Order Details' },
-    { path: '/add-product', icon: Plus, label: 'Add Product' },
-    { path: '/automation', icon: Bot, label: 'Python Automation' },
-    { path: '/bulk-upload', icon: Upload, label: 'JSON Bulk Upload' }
+    { path: '/seller/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/seller/documents', icon: FileText, label: 'Seller Documentation' },
+    { path: '/seller/products', icon: Package, label: 'My Products' },
+    { path: '/seller/products', icon: Package, label: 'Edit Products' },
+    { path: '/seller/orders', icon: ShoppingCart, label: 'Order Details' },
+    { path: '/seller/add-product', icon: Plus, label: 'Add Product' },
+    { path: '/seller/automation', icon: Bot, label: 'Python Automation' },
+    { path: '/seller/bulk-upload', icon: Upload, label: 'JSON Bulk Upload' }
   ]
 
   return (

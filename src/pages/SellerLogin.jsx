@@ -268,7 +268,7 @@ const SellerLogin = () => {
       if (!sellerData.documentsUploaded) {
         navigate('/seller/documents')
       } else {
-        navigate('/dashboard')
+        navigate('/seller/dashboard')
       }
     } catch (error) {
       console.error('Login error:', error)
