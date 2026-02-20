@@ -4,17 +4,7 @@ import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle, Send } f
 import { useSellerContext } from '../context/SellerContext'
 import { auth, db } from '../config/firebase'
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'
-import {
-  doc,
-  getDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-  setDoc,
-  updateDoc,
-  arrayUnion
-} from 'firebase/firestore'
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'
 
 const SellerLogin = () => {
   const navigate = useNavigate()
@@ -139,98 +129,11 @@ const SellerLogin = () => {
       // Check if seller document exists
       let sellerDocResult = await findSellerDocByAuthUid(authUid)
 
-      // If seller document doesn't exist, check if user exists in users collection
+      // If seller account does NOT exist, send user to seller registration
       if (!sellerDocResult) {
-        try {
-          const userRef = doc(db, 'users', authUid)
-          const userSnap = await getDoc(userRef)
-          
-          if (userSnap.exists()) {
-            // User exists from main website, create seller document with basic info
-            const userData = userSnap.data()
-            const newSellerRef = doc(db, 'sellers', authUid)
-            const sellerData = {
-              sellerId: authUid,
-              uid: authUid,
-              email: formData.email,
-              firstName: userData.displayName?.split(' ')[0] || '',
-              lastName: userData.displayName?.split(' ').slice(1).join(' ') || '',
-              businessName: userData.displayName || formData.email.split('@')[0],
-              status: 'pending', // Set to pending for new seller accounts
-              createdAt: new Date(),
-              registrationDate: new Date().toISOString(),
-              documentsUploaded: false,
-              profileCompleted: false,
-              phone: userData.contactNumber || '',
-              address: userData.address || '',
-              gstin: '',
-              panNumber: ''
-            }
-            
-            await setDoc(newSellerRef, sellerData)
-            
-            // Update user document to include seller role
-            await updateDoc(userRef, {
-              roles: arrayUnion('seller')
-            })
-            
-            sellerDocResult = { id: authUid, data: sellerData }
-          } else {
-            // User doesn't exist in users collection either, create minimal seller document
-            const newSellerRef = doc(db, 'sellers', authUid)
-            const sellerData = {
-              sellerId: authUid,
-              uid: authUid,
-              email: formData.email,
-              businessName: formData.email.split('@')[0],
-              status: 'pending', // Set to pending for new seller accounts
-              createdAt: new Date(),
-              registrationDate: new Date().toISOString(),
-              documentsUploaded: false,
-              profileCompleted: false,
-              phone: '',
-              address: '',
-              gstin: '',
-              panNumber: ''
-            }
-            
-            await setDoc(newSellerRef, sellerData)
-            
-            // Create user document with seller role
-            await setDoc(doc(db, 'users', authUid), {
-              uid: authUid,
-              email: formData.email,
-              displayName: formData.email.split('@')[0],
-              roles: ['seller'],
-              createdAt: new Date(),
-              updatedAt: new Date()
-            })
-            
-            sellerDocResult = { id: authUid, data: sellerData }
-          }
-        } catch (err) {
-          console.error('Error creating seller document:', err)
-          // Fallback: create minimal seller document
-          const newSellerRef = doc(db, 'sellers', authUid)
-          const sellerData = {
-            sellerId: authUid,
-            uid: authUid,
-            email: formData.email,
-            businessName: formData.email.split('@')[0],
-            status: 'pending',
-            createdAt: new Date(),
-            registrationDate: new Date().toISOString(),
-            documentsUploaded: false,
-            profileCompleted: false,
-            phone: '',
-            address: '',
-            gstin: '',
-            panNumber: ''
-          }
-          
-          await setDoc(newSellerRef, sellerData)
-          sellerDocResult = { id: authUid, data: sellerData }
-        }
+        // Do NOT auto-create seller; force user to complete seller registration
+        navigate('/seller/register', { replace: true })
+        return
       }
 
       const sellerId = sellerDocResult.id
