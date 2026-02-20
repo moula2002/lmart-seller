@@ -1,46 +1,94 @@
-import React from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import React from "react"
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 
-// General Pages
-import Dashboard from './pages/Dashboard'
-import SellerProducts from './pages/SellerProducts' // <--- ADDED
-import AddProduct from './pages/AddProduct' // <--- ADDED
+// ================= PAGES =================
+import Dashboard from "./pages/Dashboard"
+import SellerProducts from "./pages/SellerProducts"
+import AddProduct from "./pages/AddProduct"
+import EditProduct from "./pages/EditProduct"
 
-// Seller Auth/Onboarding
-import SellerRegister from './pages/SellerRegister'
-import SellerLogin from './pages/SellerLogin'
-import SellerDocuments from './pages/SellerDocuments'
-import SellerPendingApproval from './pages/SellerPendingApproval'
+import SellerRegister from "./pages/SellerRegister"
+import SellerLogin from "./pages/SellerLogin"
+import SellerDocuments from "./pages/SellerDocuments"
+import SellerPendingApproval from "./pages/SellerPendingApproval"
 
-import { SellerProvider } from './context/SellerContext'
-import EditProduct from './pages/EditProduct'
+// ================= CONTEXT =================
+import { SellerProvider } from "./context/SellerContext"
 
+// ================= ROLE GUARD =================
+import RequireRole from "./pages/RequireRole"
 
 const App = () => {
-
   return (
     <SellerProvider>
       <Router>
         <Routes>
 
-          {/* Default Route */}
-          <Route path="/" element={<Navigate to="/seller/register" replace />} />
+          {/* ================= DEFAULT ================= */}
+          <Route path="/" element={<Navigate to="/seller/login" replace />} />
 
-          {/* Dashboard */}
-          <Route path="/dashboard" element={<Dashboard />} />
-
-          {/* Product Management Routes */}
-          <Route path="/seller/products" element={<SellerProducts />} />
-          <Route path="/add-products" element={<AddProduct />} /> 
-          <Route path="/products/edit/:productId" element={<EditProduct />} />
-          
-          {/* Seller Onboarding/Auth Routes */}
+          {/* ================= SELLER AUTH ================= */}
           <Route path="/seller/register" element={<SellerRegister />} />
           <Route path="/seller/login" element={<SellerLogin />} />
-          <Route path="/seller/documents" element={<SellerDocuments />} />
 
-          {/* Pending Approval Page */}
-          <Route path="/seller/pending-approval" element={<SellerPendingApproval />} />
+          {/* ================= PROTECTED SELLER ROUTES ================= */}
+
+          <Route
+            path="/seller/dashboard"
+            element={
+              <RequireRole role="seller">
+                <Dashboard />
+              </RequireRole>
+            }
+          />
+
+          <Route
+            path="/seller/products"
+            element={
+              <RequireRole role="seller">
+                <SellerProducts />
+              </RequireRole>
+            }
+          />
+
+          <Route
+            path="/seller/add-product"
+            element={
+              <RequireRole role="seller">
+                <AddProduct />
+              </RequireRole>
+            }
+          />
+
+          <Route
+            path="/seller/products/edit/:productId"
+            element={
+              <RequireRole role="seller">
+                <EditProduct />
+              </RequireRole>
+            }
+          />
+
+          <Route
+            path="/seller/documents"
+            element={
+              <RequireRole role="seller">
+                <SellerDocuments />
+              </RequireRole>
+            }
+          />
+
+          <Route
+            path="/seller/pending-approval"
+            element={
+              <RequireRole role="seller">
+                <SellerPendingApproval />
+              </RequireRole>
+            }
+          />
+
+          {/* ================= FALLBACK ================= */}
+          <Route path="*" element={<Navigate to="/seller/login" replace />} />
 
         </Routes>
       </Router>

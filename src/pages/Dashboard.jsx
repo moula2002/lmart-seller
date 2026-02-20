@@ -8,47 +8,64 @@ import SellerProducts from './SellerProducts'
 import OrderDetails from './OrderDetails'
 import JsonBulkUpload from './JsonBulkUpload'
 // import PythonAutomation from './PythonAutomation'
-import { useSeller } from '../context/SellerContext'
+import { useSellerContext } from '../context/SellerContext'
 import { auth, db } from '../config/firebase'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { doc, onSnapshot, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 
 const Dashboard = () => {
-  const { seller } = useSeller()
+ const { seller } = useSellerContext()
   const navigate = useNavigate()
   const [activeSection, setActiveSection] = useState('profile')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [currentUser, setCurrentUser] = useState(null)
 
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user)
-      if (!user) {
-        navigate('/seller/login')
-        return
-      }
+useEffect(() => {
+  const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    setCurrentUser(user)
 
-      const sellerRef = doc(db, 'sellers', user.uid)
-      const unsubscribeSeller = onSnapshot(sellerRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const sellerData = docSnap.data()
-          if (sellerData?.status === 'blocked') {
-            alert('Your account has been blocked by the admin.')
-            signOut(auth).then(() => navigate('/seller/login'))
-          }
+    if (!user) {
+      navigate('/seller/login')
+      return
+    }
+
+    // 🔥 CHECK USER ROLE FROM USERS COLLECTION
+    const userRef = doc(db, "users", user.uid)
+    const unsubscribeUser = onSnapshot(userRef, (userSnap) => {
+      if (userSnap.exists()) {
+        const userData = userSnap.data()
+
+        if (!userData.roles || !userData.roles.includes("seller")) {
+          navigate("/")   // ❌ Not a seller → go home
         }
-      }, (err) => {
-        console.error('seller snapshot error', err)
-      })
+      } else {
+        navigate("/")
+      }
+    })
 
-      return () => unsubscribeSeller()
+    // Existing seller status check
+    const sellerRef = doc(db, 'sellers', user.uid)
+    const unsubscribeSeller = onSnapshot(sellerRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const sellerData = docSnap.data()
+        if (sellerData?.status === 'blocked') {
+          alert('Your account has been blocked by the admin.')
+          signOut(auth).then(() => navigate('/seller/login'))
+        }
+      }
     })
 
     return () => {
-      unsubscribeAuth()
+      unsubscribeSeller()
+      unsubscribeUser()
     }
-  }, [navigate])
+  })
+
+  return () => {
+    unsubscribeAuth()
+  }
+}, [navigate])
 
   const sidebarItems = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -201,7 +218,8 @@ const Dashboard = () => {
 export default Dashboard
 
 /* ---------------- SellerProfile (in-file) ---------------- */
-function SellerProfile({ currentUser, collectionName = 'sellers', onLogout }) {
+function SellerProfile({ currentUser, collectionName="sellers", onLogout }) {
+  
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null) // {type: 'success'|'error', text}

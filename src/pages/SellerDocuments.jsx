@@ -44,7 +44,7 @@ const SellerDocuments = () => {
         return;
       }
       const user = auth.currentUser;
-      const sellerRef = doc(db, "sellers", user.uid);
+      const sellerRef = doc(db, "sellers", user.uid)
       const snap = await getDoc(sellerRef);
 
       if (snap.exists()) {
@@ -187,7 +187,7 @@ const SellerDocuments = () => {
         overallVerificationStatus: "under_review",
         updatedAt: new Date().toISOString()
       });
-
+  
       dispatch({
         type: "UPLOAD_DOCUMENTS",
         payload: uploadedDocs
