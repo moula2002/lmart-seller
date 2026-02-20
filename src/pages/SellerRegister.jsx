@@ -31,6 +31,8 @@ const SellerRegister = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isUserLoggedIn, setIsUserLoggedIn] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
+  const [locationLoading, setLocationLoading] = useState(false)
+  const [locationError, setLocationError] = useState('')
 
   // Check auth state on mount
   useEffect(() => {
@@ -116,6 +118,93 @@ const SellerRegister = () => {
   
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
+  }
+
+  const handleUseCurrentLocation = () => {
+    setLocationError('')
+
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported in this browser.')
+      return
+    }
+
+    setLocationLoading(true)
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords
+
+          // Basic reverse geocoding using OpenStreetMap Nominatim
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
+          )
+
+          if (!response.ok) {
+            throw new Error('Failed to fetch address details.')
+          }
+
+          const data = await response.json()
+          const addr = data.address || {}
+
+          const city =
+            addr.city ||
+            addr.town ||
+            addr.village ||
+            addr.suburb ||
+            ''
+
+          const state = addr.state || ''
+          const pincode = addr.postcode || ''
+
+          // Build a readable address line
+          const addressLineParts = [
+            addr.house_number,
+            addr.road,
+            addr.neighbourhood,
+            addr.suburb
+          ].filter(Boolean)
+
+          const addressText = addressLineParts.join(', ')
+
+          setFormData(prev => ({
+            ...prev,
+            address: prev.address || addressText,
+            city: prev.city || city,
+            state: prev.state || state,
+            pincode: prev.pincode || pincode
+          }))
+
+          // Clear field-level errors for location fields
+          setErrors(prev => ({
+            ...prev,
+            address: '',
+            city: '',
+            state: '',
+            pincode: ''
+          }))
+        } catch (err) {
+          console.error('Location lookup failed:', err)
+          setLocationError('Could not automatically fetch address. Please fill manually.')
+        } finally {
+          setLocationLoading(false)
+        }
+      },
+      (err) => {
+        console.error('Geolocation error:', err)
+        if (err.code === 1) {
+          setLocationError('Location permission denied. Please allow access or fill address manually.')
+        } else {
+          setLocationError('Unable to get current location. Please try again or fill manually.')
+        }
+        setLocationLoading(false)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    )
   }
 
  const handleSubmit = async (e) => {
@@ -429,12 +518,28 @@ const SellerRegister = () => {
 
             {/* address */}
             <section>
-              <div className="mb-4 flex items-center gap-2">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-purple-100">
-                  <MapPin className="h-4 w-4 text-purple-600" />
-                </span>
-                <h2 className="text-lg font-semibold text-purple-700">Address Information</h2>
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-purple-100">
+                    <MapPin className="h-4 w-4 text-purple-600" />
+                  </span>
+                  <h2 className="text-lg font-semibold text-purple-700">Address Information</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUseCurrentLocation}
+                  disabled={locationLoading}
+                  className="text-xs md:text-sm px-3 py-1 rounded-full border border-purple-500 text-purple-700 hover:bg-purple-50 disabled:opacity-60"
+                >
+                  {locationLoading ? 'Detecting location...' : 'Use current location'}
+                </button>
               </div>
+
+              {locationError && (
+                <p className="mb-2 text-xs text-red-500">
+                  {locationError}
+                </p>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Address */}
