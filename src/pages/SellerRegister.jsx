@@ -1,9 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { User, Mail, Phone, MapPin, Building, Eye, EyeOff, ArrowRight, Lock } from 'lucide-react'
 import { useSellerContext } from '../context/SellerContext'
 import { auth, db } from '../config/firebase'
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'
 import { doc, setDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore'
 
 const SellerRegister = () => {
@@ -29,6 +29,28 @@ const SellerRegister = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isUserLoggedIn, setIsUserLoggedIn] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  // Check auth state on mount
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsUserLoggedIn(!!user)
+      setAuthChecked(true)
+      
+      // If user is logged in, populate email from their account (only if email is empty)
+      if (user && user.email) {
+        setFormData(prev => {
+          if (!prev.email) {
+            return { ...prev, email: user.email }
+          }
+          return prev
+        })
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
 
   const businessTypes = [
     'Individual',
@@ -61,7 +83,6 @@ const SellerRegister = () => {
     if (!formData.email.trim()) newErrors.email = 'Email is required'
     
     // Password validation - only required if user is not already logged in
-    const isUserLoggedIn = auth.currentUser !== null
     if (!isUserLoggedIn) {
       if (!formData.password) newErrors.password = 'Password is required'
       else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters'
@@ -107,7 +128,7 @@ const SellerRegister = () => {
     let sellerId = null
 
     // If user is not logged in, create Firebase Auth account
-    if (!user) {
+    if (!isUserLoggedIn || !user) {
       try {
         const userCredential = await createUserWithEmailAndPassword(
           auth,
@@ -280,7 +301,7 @@ const SellerRegister = () => {
                 </div>
 
                 {/* Password - Only show if user is not logged in */}
-                {!auth.currentUser && (
+                {authChecked && !isUserLoggedIn && (
                   <>
                     <div className="relative">
                       <label className="mb-1 block text-sm font-medium text-gray-700">Password *</label>
