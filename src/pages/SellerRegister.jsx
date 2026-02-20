@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { User, Mail, Phone, MapPin, Building, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { User, Mail, Phone, MapPin, Building, Eye, EyeOff, ArrowRight, Lock } from 'lucide-react'
 import { useSellerContext } from '../context/SellerContext'
 import { auth, db } from '../config/firebase'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
-import { doc, setDoc } from 'firebase/firestore'
+import { doc, setDoc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore'
 
 const SellerRegister = () => {
   const navigate = useNavigate()
@@ -13,6 +13,8 @@ const SellerRegister = () => {
     firstName: '',
     lastName: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     phone: '',
     businessName: '',
     businessType: '',
@@ -20,15 +22,13 @@ const SellerRegister = () => {
     address: '',
     city: '',
     state: '',
-    pincode: '',
-    password: '',
-    confirmPassword: ''
+    pincode: ''
   })
 
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [errors, setErrors] = useState({})
   const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const businessTypes = [
     'Individual',
@@ -59,6 +59,17 @@ const SellerRegister = () => {
     if (!formData.firstName.trim()) newErrors.firstName = 'First name is required'
     if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required'
     if (!formData.email.trim()) newErrors.email = 'Email is required'
+    
+    // Password validation - only required if user is not already logged in
+    const isUserLoggedIn = auth.currentUser !== null
+    if (!isUserLoggedIn) {
+      if (!formData.password) newErrors.password = 'Password is required'
+      else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters'
+      
+      if (!formData.confirmPassword) newErrors.confirmPassword = 'Please confirm your password'
+      else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match'
+    }
+    
     if (!formData.phone.trim()) newErrors.phone = 'Phone number is required'
     if (!formData.businessName.trim()) newErrors.businessName = 'Business name is required'
     if (!formData.businessType) newErrors.businessType = 'Business type is required'
@@ -66,8 +77,6 @@ const SellerRegister = () => {
     if (!formData.city.trim()) newErrors.city = 'City is required'
     if (!formData.state) newErrors.state = 'State is required'
     if (!formData.pincode.trim()) newErrors.pincode = 'Pincode is required'
-    if (!formData.password) newErrors.password = 'Password is required'
-    if (!formData.confirmPassword) newErrors.confirmPassword = 'Confirm password is required'
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (formData.email && !emailRegex.test(formData.email)) newErrors.email = 'Please enter a valid email address'
@@ -83,56 +92,125 @@ const SellerRegister = () => {
       if (!gstRegex.test(formData.gstNumber)) newErrors.gstNumber = 'Please enter a valid GST number'
     }
 
-    if (formData.password && formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters long'
-    if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match'
-
+  
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!validateForm()) return
-    setIsLoading(true)
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password)
-      const user = userCredential.user
-      const sellerId = user.uid
-      const sellerData = {
-        sellerId,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        businessName: formData.businessName,
-        businessType: formData.businessType,
-        gstNumber: formData.gstNumber,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        pincode: formData.pincode,
-        registrationDate: new Date().toISOString(),
-        status: 'pending',
-        documentsUploaded: false,
-        profileCompleted: false
+ const handleSubmit = async (e) => {
+  e.preventDefault()
+  if (!validateForm()) return
+  setIsLoading(true)
+
+  try {
+    let user = auth.currentUser
+    let sellerId = null
+
+    // If user is not logged in, create Firebase Auth account
+    if (!user) {
+      try {
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          formData.email,
+          formData.password
+        )
+        user = userCredential.user
+        sellerId = user.uid
+      } catch (authError) {
+        if (authError.code === 'auth/email-already-in-use') {
+          setErrors({ ...errors, email: 'This email is already registered. Please login instead.' })
+          setIsLoading(false)
+          return
+        } else {
+          throw authError
+        }
       }
-
-      await setDoc(doc(db, 'sellers', sellerId), sellerData)
-      dispatch({ type: 'REGISTER_SELLER', payload: { id: sellerId, ...sellerData } })
-      alert('🎉 Registration successful! Please upload your documents next.')
-      navigate('/seller/documents')
-    } catch (error) {
-      console.error('Registration error:', error)
-      let errorMessage = 'Registration failed. Please try again.'
-      if (error.code === 'auth/email-already-in-use') errorMessage = 'Email already registered.'
-      else if (error.code === 'auth/weak-password') errorMessage = 'Weak password. Please choose a stronger one.'
-      else if (error.code === 'auth/invalid-email') errorMessage = 'Invalid email address.'
-      alert(errorMessage)
-    } finally {
-      setIsLoading(false)
+    } else {
+      // User is already logged in (from main website)
+      sellerId = user.uid
+      
+      // Check if seller profile already exists
+      const existingSellerRef = doc(db, "sellers", sellerId)
+      const existingSellerSnap = await getDoc(existingSellerRef)
+      if (existingSellerSnap.exists()) {
+        alert("You already have a seller account. Please login instead.")
+        navigate("/seller/login")
+        setIsLoading(false)
+        return
+      }
     }
-  }
 
+    const sellerData = {
+      sellerId,
+      uid: sellerId,
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email || user.email,
+      phone: formData.phone,
+      businessName: formData.businessName,
+      businessType: formData.businessType,
+      gstNumber: formData.gstNumber,
+      address: formData.address,
+      city: formData.city,
+      state: formData.state,
+      pincode: formData.pincode,
+      registrationDate: new Date().toISOString(),
+      createdAt: new Date(),
+      status: "pending",
+      documentsUploaded: false,
+      profileCompleted: false
+    }
+
+    // ✅ Create seller profile
+    await setDoc(doc(db, "sellers", sellerId), sellerData)
+
+    // ✅ Create or update user document with seller role
+    const userRef = doc(db, "users", sellerId)
+    const userSnap = await getDoc(userRef)
+    
+    if (userSnap.exists()) {
+      // User exists, add seller role
+      await updateDoc(userRef, {
+        roles: arrayUnion("seller"),
+        email: formData.email || user.email,
+        displayName: `${formData.firstName} ${formData.lastName}`,
+        updatedAt: new Date()
+      })
+    } else {
+      // Create new user document
+      await setDoc(userRef, {
+        uid: sellerId,
+        email: formData.email || user.email,
+        displayName: `${formData.firstName} ${formData.lastName}`,
+        roles: ["seller"],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+    }
+
+    dispatch({
+      type: "REGISTER_SELLER",
+      payload: { id: sellerId, ...sellerData }
+    })
+
+    alert("🎉 Seller registration successful! Upload documents next.")
+    navigate("/seller/documents")
+
+  } catch (error) {
+    console.error("Seller registration error:", error)
+    let errorMessage = "Registration failed. Try again."
+    if (error.code === 'auth/email-already-in-use') {
+      errorMessage = "This email is already registered. Please login instead."
+    } else if (error.code === 'auth/weak-password') {
+      errorMessage = "Password is too weak. Please use a stronger password."
+    } else if (error.code === 'auth/invalid-email') {
+      errorMessage = "Invalid email address."
+    }
+    alert(errorMessage)
+  } finally {
+    setIsLoading(false)
+  }
+}
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 via-white to-purple-50 px-4 py-10">
       <div className="mx-auto max-w-5xl">
@@ -200,6 +278,57 @@ const SellerRegister = () => {
                   />
                   {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
                 </div>
+
+                {/* Password - Only show if user is not logged in */}
+                {!auth.currentUser && (
+                  <>
+                    <div className="relative">
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Password *</label>
+                      <Lock className="pointer-events-none absolute right-3 top-9 h-4 w-4 text-gray-400" />
+                      <div className="relative">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          name="password"
+                          value={formData.password}
+                          onChange={handleInputChange}
+                          placeholder="Create a password (min 6 characters)"
+                          className={`w-full rounded-md border px-4 py-2 pr-9 outline-none focus:ring-2 focus:ring-purple-500 ${errors.password ? 'border-red-500' : 'border-gray-300'}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-3 text-gray-400 hover:text-purple-600"
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password}</p>}
+                    </div>
+
+                    <div className="relative">
+                      <label className="mb-1 block text-sm font-medium text-gray-700">Confirm Password *</label>
+                      <Lock className="pointer-events-none absolute right-3 top-9 h-4 w-4 text-gray-400" />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          name="confirmPassword"
+                          value={formData.confirmPassword}
+                          onChange={handleInputChange}
+                          placeholder="Confirm your password"
+                          className={`w-full rounded-md border px-4 py-2 pr-9 outline-none focus:ring-2 focus:ring-purple-500 ${errors.confirmPassword ? 'border-red-500' : 'border-gray-300'}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-3 text-gray-400 hover:text-purple-600"
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{errors.confirmPassword}</p>}
+                    </div>
+                  </>
+                )}
 
                 {/* Phone */}
                 <div className="relative">
@@ -348,57 +477,6 @@ const SellerRegister = () => {
                 </div>
               </div>
             </section>
-
-            {/* security */}
-            <section>
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-purple-700">Account Security</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Password */}
-                <div className="relative">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Password *</label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    placeholder="Min 8 characters"
-                    className={`w-full rounded-md border px-4 py-2 pr-10 outline-none focus:ring-2 focus:ring-purple-500 ${errors.password ? 'border-red-500' : 'border-gray-300'}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-9 text-gray-400 hover:text-purple-600"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                  {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password}</p>}
-                </div>
-
-                {/* Confirm Password */}
-                <div className="relative">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Confirm Password *</label>
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    placeholder="Re-enter password"
-                    className={`w-full rounded-md border px-4 py-2 pr-10 outline-none focus:ring-2 focus:ring-purple-500 ${errors.confirmPassword ? 'border-red-500' : 'border-gray-300'}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-9 text-gray-400 hover:text-purple-600"
-                  >
-                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                  {errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{errors.confirmPassword}</p>}
-                </div>
-              </div>
-            </section>
-
             {/* submit */}
             <div className="pt-2">
               <button
